@@ -1,0 +1,30 @@
+name: Build and Deploy to Hostinger KVM (Self-hosted)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # 내 서버에서 직접 실행됨
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and Run Docker Container
+        run: |
+          # 최신 이미지 빌드
+          docker build -t bible-backend:latest .
+          
+          # 기존 컨테이너 중지 및 삭제
+          docker stop bible-backend || true
+          docker rm bible-backend || true
+          
+          # 새 컨테이너 실행 (서버 로컬의 .env 파일 참조)
+          docker run -d \
+            --name bible-backend \
+            -p 8080:8080 \
+            --env-file /root/app/.env \
+            --restart always \
+            bible-backend:latest
