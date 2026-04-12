@@ -21,10 +21,11 @@ jobs:
           docker stop bible-backend || true
           docker rm bible-backend || true
           
-          # 새 컨테이너 실행 (서버 로컬의 .env 파일 참조)
+          # 새 컨테이너 실행 (서버 로컬의 .env 파일 참조 및 Supabase 네트워크 참여)
           docker run -d \
             --name bible-backend \
             -p 8080:8080 \
+            --network=supabase_default \
             --env-file /root/app/.env \
             --restart always \
             bible-backend:latest
