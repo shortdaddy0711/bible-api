@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Node.js 24 환경을 강제로 사용하도록 설정
+
 jobs:
   deploy:
     runs-on: self-hosted  # 내 서버에서 직접 실행됨
