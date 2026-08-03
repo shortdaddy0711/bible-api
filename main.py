@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
+from agent import BibleAgent, ChatRequest, ChatResponse
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -18,16 +19,20 @@ load_dotenv()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Supabase credentials not found in .env")
-if not OPENAI_API_KEY:
-    raise ValueError("OpenAI API key not found in .env")
+if not OPENROUTER_API_KEY:
+    raise ValueError("OpenRouter API key not found in .env")
 
 # Initialize clients
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+openai_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
+bible_agent = BibleAgent(openai_client, supabase)
 
 app = FastAPI(title="Logos Mind API")
 
@@ -66,7 +71,16 @@ class SermonResponse(BaseModel):
     chunk_text: str
     similarity: Optional[float] = None
 
-@app.get("/api/bible/search", response_model=List[VerseResponse])
+class SectionResponse(BaseModel):
+    id: str
+    book: str
+    chapter: int
+    verse_range: str
+    title: Optional[str] = None
+    content: str
+    similarity: Optional[float] = None
+
+@app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
     query: str = Query(..., description="Semantic search query"),
     limit: int = Query(5, ge=1, le=20)
@@ -79,18 +93,17 @@ async def search_bible(
         )
         query_embedding = response.data[0].embedding
 
-        # 2. Call the Supabase RPC function (match_bible_verses)
-        # Using a conservative threshold of 0.4 for similarity (1 - distance)
+        # 2. Call the new Supabase RPC function (match_bible_sections)
         result = supabase.rpc(
-            "match_bible_verses",
+            "match_bible_sections",
             {
                 "query_embedding": query_embedding,
-                "match_threshold": 0.4,
+                "match_threshold": 0.3, # Slightly lower threshold for broader context
                 "match_count": limit
             }
         ).execute()
         
-        logger.info(f"search_bible response for query '{query}': {result.data}")
+        logger.info(f"search_bible (sections) response for query '{query}': {len(result.data)} results")
         return result.data
         
     except Exception as e:
@@ -192,6 +205,15 @@ async def find_pastor_quotes(
         
     except Exception as e:
         logger.error(f"find_pastor_quotes error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_with_agent(request: ChatRequest):
+    try:
+        response = bible_agent.run(request.message, request.history or [])
+        return response
+    except Exception as e:
+        logger.error(f"chat_with_agent error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

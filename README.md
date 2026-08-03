@@ -25,7 +25,15 @@ This directory contains the FastAPI backend for the Logos Mind project. It provi
    ```env
    SUPABASE_URL=http://<your-vps-ip>:8000
    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-   OPENAI_API_KEY=sk-proj-your_openai_api_key
+   OPENROUTER_API_KEY=sk-or-your_openrouter_key
+   ```
+
+   The maintenance scripts in `scripts/` that run SQL directly on the VPS (`schema_update.py`, `remote_sql_exec.py`) additionally need SSH credentials (never commit these to the repo):
+
+   ```env
+   SSH_HOST=your-vps-ip
+   SSH_USER=root
+   SSH_PASSWORD=your-ssh-password
    ```
 
 2. **Install Dependencies**
@@ -68,6 +76,9 @@ Once the server is running, you can access the automatically generated interacti
 - `GET /api/sermons/search`
   - Parameters: `query` (string), `limit` (int)
   - Description: Performs a vector similarity search on the `sermons` table.
+- `POST /api/chat`
+  - Body: `{ "message": string, "history": Array }`
+  - Description: Agentic chat interface that uses the Bible and sermon tools to provide theological answers.
 
 ## Deployment
 
