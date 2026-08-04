@@ -85,13 +85,24 @@ def get_book_structure() -> Dict[str, List[int]]:
 
 def chapter_already_ingested(book: str, chapter: int) -> bool:
     r = supabase.table("bible_verses") \
-        .select("id") \
+        .select("text") \
         .eq("book", book) \
         .eq("chapter", chapter) \
         .eq("version", VERSION) \
-        .limit(1) \
+        .order("verse_start") \
+        .limit(5) \
         .execute()
-    return bool(r.data)
+    if not r.data:
+        return False
+    if any("[" in v["text"] for v in r.data):
+        # Legacy line-parser bug merged verses; markers prove corruption.
+        logger.warning("Corrupted ESV rows for %s %d; deleting and re-ingesting", book, chapter)
+        supabase.table("bible_verses") \
+            .delete().eq("book", book).eq("chapter", chapter).eq("version", VERSION).execute()
+        supabase.table("bible_sections") \
+            .delete().eq("book", book).eq("chapter", chapter).eq("version", VERSION).execute()
+        return False
+    return True
 
 def fetch_esv_passage(en_book: str, chapter: int) -> Optional[str]:
     url = "https://api.esv.org/v3/passage/text/"
@@ -122,20 +133,21 @@ def fetch_esv_passage(en_book: str, chapter: int) -> Optional[str]:
     raise RuntimeError(f"Persistent 429 rate limit while fetching {en_book} {chapter}; re-run later to resume")
 
 def parse_passage(passage_text: str) -> Dict[int, str]:
+    # The ESV API packs multiple verses per line; markers can appear anywhere.
+    # Drop everything before the first marker (headings/superscriptions), then
+    # split on every marker in the text.
+    first = re.search(r"\[(\d+)(?:[a-z])?\]", passage_text)
+    if not first:
+        return {}
+    body = passage_text[first.start():]
+    parts = re.split(r"\[(\d+)(?:[a-z])?\]", body)
     verses: Dict[int, List[str]] = {}
-    current: Optional[int] = None
-    marker = re.compile(r"^\[(\d+)(?:[a-z])?\]\s*(.*)$")
-    for raw_line in passage_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        m = marker.match(line)
-        if m:
-            current = int(m.group(1))
-            verses.setdefault(current, []).append(m.group(2).strip())
-        elif current is not None:
-            verses[current].append(line)
-    return {k: " ".join(v).strip() for k, v in verses.items()}
+    for i in range(1, len(parts) - 1, 2):
+        num = int(parts[i])
+        clean = " ".join(parts[i + 1].split()).strip()
+        if clean:
+            verses.setdefault(num, []).append(clean)
+    return {k: " ".join(v) for k, v in verses.items()}
 
 def build_sections(book: str, chapter: int, verses: Dict[int, str], pericopes: List[Dict]) -> List[Dict]:
     if not verses:
