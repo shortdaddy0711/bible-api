@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
-from agent import BibleAgent, ChatRequest, ChatResponse, detect_version
+from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, ESV_COPYRIGHT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -34,7 +34,7 @@ openai_client = OpenAI(
 )
 bible_agent = BibleAgent(openai_client, supabase)
 
-app = FastAPI(title="Logos Mind API")
+app = FastAPI(title="Logos Mind API", description=f"Bilingual Bible search and theological chat. NKRV for Korean, ESV for English. {ESV_COPYRIGHT}")
 
 # Add CORS middleware
 app.add_middleware(
@@ -63,6 +63,7 @@ class VerseResponse(BaseModel):
     text: str
     similarity: Optional[float] = None
     version: Optional[str] = None
+    copyright: Optional[str] = None
 
 class SermonResponse(BaseModel):
     id: str
@@ -81,6 +82,7 @@ class SectionResponse(BaseModel):
     content: str
     similarity: Optional[float] = None
     version: Optional[str] = None
+    copyright: Optional[str] = None
 
 @app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
@@ -111,7 +113,11 @@ async def search_bible(
         ).execute()
         
         logger.info(f"search_bible ({version}) response for query '{query}': {len(result.data)} results")
-        return result.data
+        rows = result.data
+        if version == "ESV":
+            for row in rows:
+                row["copyright"] = ESV_COPYRIGHT
+        return rows
         
     except Exception as e:
         logger.error(f"search_bible error: {e}")
@@ -144,8 +150,12 @@ async def get_bible_text(
             logger.warning(f"get_bible_text no verses found for {book} {chapter}:{verse_start}-{end}")
             raise HTTPException(status_code=404, detail="Verses not found")
             
-        logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {result.data}")
-        return result.data
+        rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
+        if version == "ESV":
+            for row in rows:
+                row["copyright"] = ESV_COPYRIGHT
+        logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {len(rows)} verses")
+        return rows
         
     except HTTPException:
         raise
@@ -178,8 +188,12 @@ async def get_bible_chapters(
             logger.warning(f"get_bible_chapters no verses found for {book} chapters {chapter_start}-{end}")
             raise HTTPException(status_code=404, detail="Chapters not found")
             
-        logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(result.data)} verses")
-        return result.data
+        rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
+        if version == "ESV":
+            for row in rows:
+                row["copyright"] = ESV_COPYRIGHT
+        logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(rows)} verses")
+        return rows
         
     except HTTPException:
         raise

@@ -13,12 +13,16 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install uv
-        run: pip install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run ESV ingestion
         run: |
           set -a
           source /root/app/.env
           set +a
+          # supabase-kong resolves only inside the docker network; use the public endpoint
+          export SUPABASE_URL=http://76.13.110.111:8000
           uv sync --frozen
           uv run python scripts/ingest_esv.py

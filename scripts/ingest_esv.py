@@ -29,6 +29,8 @@ openai_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUT
 EMBEDDING_MODEL = "openai/text-embedding-3-small"
 VERSION = "ESV"
 BATCH_SIZE = 50
+# ESV API v3 limits: 60 requests/minute. Sleep between fetches to stay under.
+FETCH_PACING_S = 1.1
 
 KO_TO_EN = {
     '창세기': 'Genesis', '출애굽기': 'Exodus', '레위기': 'Leviticus', '민수기': 'Numbers', '신명기': 'Deuteronomy',
@@ -229,7 +231,7 @@ def run_ingestion():
             insert_rows("bible_sections", sections)
             if processed % 25 == 0:
                 logger.info("Processed %d/%d chapters", processed, total)
-            time.sleep(0.15)
+            time.sleep(FETCH_PACING_S)
     logger.info("Verse/section ingestion done. Starting embeddings...")
     embed_sections()
     logger.info("ESV ingestion completed!")

@@ -52,13 +52,18 @@ SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised
                     "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
                     "If you use a tool, explain your thought process briefly.")
 
+ESV_COPYRIGHT = ("Scripture quotations are from The Holy Bible, English Standard Version® (ESV®), "
+                 "copyright © 2001 by Crossway, a publishing ministry of Good News Publishers. "
+                 "Used by permission. All rights reserved.")
+
 SYSTEM_PROMPT_EN = ("You are a theological assistant specializing in the English Standard Version (ESV) of the Bible. "
                     "Your goal is to provide deep insights grounded in scripture. "
                     "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
                     "Tailor your search and synthesis accordingly. "
                     "Always search the Bible to find relevant context before answering. "
                     "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
-                    "If you use a tool, explain your thought process briefly.")
+                    "If you use a tool, explain your thought process briefly. "
+                    f"When you quote ESV text, end your response with: \"{ESV_COPYRIGHT}\"")
 
 MAX_TOOL_ROUNDS = 5
 TOOLS = [
@@ -173,6 +178,7 @@ class BibleAgent:
                 .gte("verse_start", verse_start) \
                 .lte("verse_end", end) \
                 .order("verse_start") \
+                .limit(500) \
                 .execute()
             
             return json.dumps(result.data, ensure_ascii=False)
