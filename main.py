@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
-from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, ESV_COPYRIGHT
+from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, ESV_COPYRIGHT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -125,25 +125,28 @@ async def search_bible(
 
 @app.get("/api/bible/text", response_model=List[VerseResponse])
 async def get_bible_text(
-    book: str = Query(..., description="Name of the book (e.g., 창세기)"),
+    book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
     chapter: int = Query(..., description="Chapter number"),
     verse_start: int = Query(..., description="Starting verse number"),
     verse_end: Optional[int] = Query(None, description="Ending verse number (inclusive)"),
-    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to both)")
+    version: Optional[str] = Query(None, description="NKRV or ESV (defaults by book language)")
 ):
     try:
         # Determine the end verse range
         end = verse_end if verse_end is not None else verse_start
+
+        # English book names map to the Korean names used in the DB
+        version = version or detect_version(book)
+        book = normalize_book(book)
         
         # Query Supabase exactly for the requested range
         query = supabase.table("bible_verses") \
             .select("id, book, chapter, verse_start, verse_end, text, version") \
             .eq("book", book) \
             .eq("chapter", chapter) \
+            .eq("version", version) \
             .gte("verse_start", verse_start) \
             .lte("verse_end", end)
-        if version:
-            query = query.eq("version", version)
         result = query.order("verse_start").execute()
             
         if not result.data:
@@ -165,23 +168,26 @@ async def get_bible_text(
 
 @app.get("/api/bible/chapters", response_model=List[VerseResponse])
 async def get_bible_chapters(
-    book: str = Query(..., description="Name of the book (e.g., 창세기)"),
+    book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
     chapter_start: int = Query(..., description="Starting chapter number"),
     chapter_end: Optional[int] = Query(None, description="Ending chapter number (inclusive)"),
-    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to both)")
+    version: Optional[str] = Query(None, description="NKRV or ESV (defaults by book language)")
 ):
     try:
         # Determine the end chapter range
         end = chapter_end if chapter_end is not None else chapter_start
+
+        # English book names map to the Korean names used in the DB
+        version = version or detect_version(book)
+        book = normalize_book(book)
         
         # Query Supabase for the requested chapter range
         query = supabase.table("bible_verses") \
             .select("id, book, chapter, verse_start, verse_end, text, version") \
             .eq("book", book) \
+            .eq("version", version) \
             .gte("chapter", chapter_start) \
             .lte("chapter", end)
-        if version:
-            query = query.eq("version", version)
         result = query.order("chapter").order("verse_start").execute()
             
         if not result.data:

@@ -43,6 +43,11 @@ KO_TO_EN = {
     '요한일서': '1 John', '요한이서': '2 John', '요한삼서': '3 John', '유다서': 'Jude', '요한계시록': 'Revelation'
 }
 EN_TO_KO = {v: k for k, v in KO_TO_EN.items()}
+EN_TO_KO_LOWER = {v.lower(): k for k, v in KO_TO_EN.items()}
+
+def normalize_book(book: str) -> str:
+    """Map an English book name (any case) to the Korean name used in the DB."""
+    return EN_TO_KO.get(book) or EN_TO_KO_LOWER.get(book.lower()) or book
 
 SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
                     "Your goal is to provide deep insights grounded in scripture. "
@@ -172,7 +177,7 @@ class BibleAgent:
             end = verse_end if verse_end is not None else verse_start
             result = self.supabase.table("bible_verses") \
                 .select("book, chapter, verse_start, verse_end, text") \
-                .eq("book", EN_TO_KO.get(book, book)) \
+                .eq("book", normalize_book(book)) \
                 .eq("chapter", chapter) \
                 .eq("version", self.current_version) \
                 .gte("verse_start", verse_start) \
