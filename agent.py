@@ -49,6 +49,12 @@ def normalize_book(book: str) -> str:
     """Map an English book name (any case) to the Korean name used in the DB."""
     return EN_TO_KO.get(book) or EN_TO_KO_LOWER.get(book.lower()) or book
 
+def display_book(book: str, version: str) -> str:
+    """Book name to show to clients: English for ESV, Korean for NKRV."""
+    if version == "ESV":
+        return KO_TO_EN.get(book, book)
+    return book
+
 SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
                     "Your goal is to provide deep insights grounded in scripture. "
                     "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
@@ -66,7 +72,7 @@ SYSTEM_PROMPT_EN = ("You are a theological assistant specializing in the English
                     "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
                     "Tailor your search and synthesis accordingly. "
                     "Always search the Bible to find relevant context before answering. "
-                    "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
+                    "When you answer, provide citations in the format [Book Chapter:Verse] using the English book name (e.g. [Psalm 23:1]). "
                     "If you use a tool, explain your thought process briefly. "
                     f"When you quote ESV text, end your response with: \"{ESV_COPYRIGHT}\"")
 
@@ -165,8 +171,13 @@ class BibleAgent:
                     "version_filter": self.current_version
                 }
             ).execute()
+
+            rows = result.data
+            if self.current_version == "ESV":
+                for row in rows:
+                    row["book"] = KO_TO_EN.get(row["book"], row["book"])
             
-            return json.dumps(result.data, ensure_ascii=False)
+            return json.dumps(rows, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Agent search_bible_tool error: {e}")
             return f"Error searching Bible: {str(e)}"
@@ -185,8 +196,13 @@ class BibleAgent:
                 .order("verse_start") \
                 .limit(500) \
                 .execute()
+
+            rows = result.data
+            if self.current_version == "ESV":
+                for row in rows:
+                    row["book"] = KO_TO_EN.get(row["book"], row["book"])
             
-            return json.dumps(result.data, ensure_ascii=False)
+            return json.dumps(rows, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Agent get_bible_text_tool error: {e}")
             return f"Error getting Bible text: {str(e)}"

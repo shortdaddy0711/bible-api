@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
-from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, ESV_COPYRIGHT
+from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, display_book, ESV_COPYRIGHT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -125,8 +125,10 @@ async def search_bible(
         
         logger.info(f"search_bible ({version}) response for query '{query}': {len(result.data)} results")
         rows = result.data
-        if version == "ESV":
-            for row in rows:
+        for row in rows:
+            row["version"] = row.get("version") or version
+            row["book"] = display_book(row.get("book", ""), row["version"])
+            if row["version"] == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         return rows
         
@@ -169,6 +171,7 @@ async def get_bible_text(
             
         rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
         for row in rows:
+            row["book"] = display_book(row.get("book", ""), row.get("version", ""))
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {len(rows)} verses")
@@ -212,6 +215,7 @@ async def get_bible_chapters(
             
         rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
         for row in rows:
+            row["book"] = display_book(row.get("book", ""), row.get("version", ""))
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(rows)} verses")
