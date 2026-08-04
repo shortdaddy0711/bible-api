@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
-from agent import BibleAgent, ChatRequest, ChatResponse
+from agent import BibleAgent, ChatRequest, ChatResponse, detect_version
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -62,6 +62,7 @@ class VerseResponse(BaseModel):
     verse_end: int
     text: str
     similarity: Optional[float] = None
+    version: Optional[str] = None
 
 class SermonResponse(BaseModel):
     id: str
@@ -79,11 +80,13 @@ class SectionResponse(BaseModel):
     title: Optional[str] = None
     content: str
     similarity: Optional[float] = None
+    version: Optional[str] = None
 
 @app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
     query: str = Query(..., description="Semantic search query"),
-    limit: int = Query(5, ge=1, le=20)
+    limit: int = Query(5, ge=1, le=20),
+    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to auto-detected from query language)")
 ):
     try:
         # 1. Embed the user's query
@@ -93,17 +96,21 @@ async def search_bible(
         )
         query_embedding = response.data[0].embedding
 
-        # 2. Call the new Supabase RPC function (match_bible_sections)
+        # 2. Detect version: Korean queries use NKRV, everything else uses ESV
+        version = version or detect_version(query)
+
+        # 3. Call the version-aware Supabase RPC function (match_bible_sections_v)
         result = supabase.rpc(
-            "match_bible_sections",
+            "match_bible_sections_v",
             {
                 "query_embedding": query_embedding,
                 "match_threshold": 0.3, # Slightly lower threshold for broader context
-                "match_count": limit
+                "match_count": limit,
+                "version_filter": version
             }
         ).execute()
         
-        logger.info(f"search_bible (sections) response for query '{query}': {len(result.data)} results")
+        logger.info(f"search_bible ({version}) response for query '{query}': {len(result.data)} results")
         return result.data
         
     except Exception as e:
@@ -115,21 +122,23 @@ async def get_bible_text(
     book: str = Query(..., description="Name of the book (e.g., 창세기)"),
     chapter: int = Query(..., description="Chapter number"),
     verse_start: int = Query(..., description="Starting verse number"),
-    verse_end: Optional[int] = Query(None, description="Ending verse number (inclusive)")
+    verse_end: Optional[int] = Query(None, description="Ending verse number (inclusive)"),
+    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to both)")
 ):
     try:
         # Determine the end verse range
         end = verse_end if verse_end is not None else verse_start
         
         # Query Supabase exactly for the requested range
-        result = supabase.table("bible_verses") \
-            .select("id, book, chapter, verse_start, verse_end, text") \
+        query = supabase.table("bible_verses") \
+            .select("id, book, chapter, verse_start, verse_end, text, version") \
             .eq("book", book) \
             .eq("chapter", chapter) \
             .gte("verse_start", verse_start) \
-            .lte("verse_end", end) \
-            .order("verse_start") \
-            .execute()
+            .lte("verse_end", end)
+        if version:
+            query = query.eq("version", version)
+        result = query.order("verse_start").execute()
             
         if not result.data:
             logger.warning(f"get_bible_text no verses found for {book} {chapter}:{verse_start}-{end}")
@@ -148,21 +157,22 @@ async def get_bible_text(
 async def get_bible_chapters(
     book: str = Query(..., description="Name of the book (e.g., 창세기)"),
     chapter_start: int = Query(..., description="Starting chapter number"),
-    chapter_end: Optional[int] = Query(None, description="Ending chapter number (inclusive)")
+    chapter_end: Optional[int] = Query(None, description="Ending chapter number (inclusive)"),
+    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to both)")
 ):
     try:
         # Determine the end chapter range
         end = chapter_end if chapter_end is not None else chapter_start
         
         # Query Supabase for the requested chapter range
-        result = supabase.table("bible_verses") \
-            .select("id, book, chapter, verse_start, verse_end, text") \
+        query = supabase.table("bible_verses") \
+            .select("id, book, chapter, verse_start, verse_end, text, version") \
             .eq("book", book) \
             .gte("chapter", chapter_start) \
-            .lte("chapter", end) \
-            .order("chapter") \
-            .order("verse_start") \
-            .execute()
+            .lte("chapter", end)
+        if version:
+            query = query.eq("version", version)
+        result = query.order("chapter").order("verse_start").execute()
             
         if not result.data:
             logger.warning(f"get_bible_chapters no verses found for {book} chapters {chapter_start}-{end}")

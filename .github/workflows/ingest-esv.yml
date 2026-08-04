@@ -1,0 +1,24 @@
+name: Ingest ESV Bible Data (Daily)
+
+on:
+  schedule:
+    - cron: '30 5 * * *'  # 05:30 UTC daily (resumable; ~75 req/day on free tier)
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Run ESV ingestion
+        run: |
+          set -a
+          source /root/app/.env
+          set +a
+          uv sync --frozen
+          uv run python scripts/ingest_esv.py

@@ -20,7 +20,9 @@ sql_commands = [
     "UPDATE bible_verses SET version = 'NKRV' WHERE version IS NULL;",
     "ALTER TABLE bible_sections ADD COLUMN IF NOT EXISTS version TEXT;",
     "UPDATE bible_sections SET version = 'NKRV' WHERE version IS NULL;",
-    "ALTER TABLE bible_verses ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES bible_sections(id) ON DELETE SET NULL;"
+    "ALTER TABLE bible_verses DROP CONSTRAINT IF EXISTS bible_verses_unique_verse;",
+    "ALTER TABLE bible_verses ADD CONSTRAINT bible_verses_unique_verse UNIQUE (book, chapter, verse_start, version);",
+    "CREATE OR REPLACE FUNCTION public.match_bible_sections_v(query_embedding vector, match_threshold double precision, match_count integer, version_filter text) RETURNS TABLE(id uuid, book text, chapter integer, verse_range text, title text, content text, similarity double precision) LANGUAGE plpgsql AS 'begin return query select bs.id, bs.book, bs.chapter, bs.verse_range, bs.title, bs.content, 1 - (bs.embedding <=> query_embedding) as similarity from bible_sections bs where 1 - (bs.embedding <=> query_embedding) > match_threshold and bs.version = version_filter order by bs.embedding <=> query_embedding limit match_count; end;'"
 ]
 
 try:

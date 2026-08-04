@@ -18,6 +18,48 @@ class ChatResponse(BaseModel):
 
 import re
 
+HANGUL_RE = re.compile(r"[\uac00-\ud7af]")
+
+def detect_version(query: str) -> str:
+    """NKRV for Korean queries, ESV for everything else."""
+    return "NKRV" if HANGUL_RE.search(query) else "ESV"
+
+KO_TO_EN = {
+    '창세기': 'Genesis', '출애굽기': 'Exodus', '레위기': 'Leviticus', '민수기': 'Numbers', '신명기': 'Deuteronomy',
+    '여호수아': 'Joshua', '사사기': 'Judges', '룻기': 'Ruth', '사무엘상': '1 Samuel', '사무엘하': '2 Samuel',
+    '열왕기상': '1 Kings', '열왕기하': '2 Kings', '역대상': '1 Chronicles', '역대하': '2 Chronicles',
+    '에스라': 'Ezra', '느헤미야': 'Nehemiah', '에스더': 'Esther', '욥기': 'Job', '시편': 'Psalms',
+    '잠언': 'Proverbs', '전도서': 'Ecclesiastes', '아가': 'Song of Solomon', '이사야': 'Isaiah',
+    '예레미야': 'Jeremiah', '예레미야애가': 'Lamentations', '에스겔': 'Ezekiel', '다니엘': 'Daniel',
+    '호세아': 'Hosea', '요엘': 'Joel', '아모스': 'Amos', '오바댜': 'Obadiah', '요나': 'Jonah',
+    '미가': 'Micah', '나훔': 'Nahum', '하박국': 'Habakkuk', '스바냐': 'Zephaniah', '학개': 'Haggai',
+    '스가랴': 'Zechariah', '말라기': 'Malachi', '마태복음': 'Matthew', '마가복음': 'Mark',
+    '누가복음': 'Luke', '요한복음': 'John', '사도행전': 'Acts', '로마서': 'Romans',
+    '고린도전서': '1 Corinthians', '고린도후서': '2 Corinthians', '갈라디아서': 'Galatians',
+    '에베소서': 'Ephesians', '빌립보서': 'Philippians', '골로새서': 'Colossians',
+    '데살로니가전서': '1 Thessalonians', '데살로니가후서': '2 Thessalonians',
+    '디모데전서': '1 Timothy', '디모데후서': '2 Timothy', '디도서': 'Titus', '빌레몬서': 'Philemon',
+    '히브리서': 'Hebrews', '야고보서': 'James', '베드로전서': '1 Peter', '베드로후서': '2 Peter',
+    '요한일서': '1 John', '요한이서': '2 John', '요한삼서': '3 John', '유다서': 'Jude', '요한계시록': 'Revelation'
+}
+EN_TO_KO = {v: k for k, v in KO_TO_EN.items()}
+
+SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
+                    "Your goal is to provide deep insights grounded in scripture. "
+                    "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
+                    "Tailor your search and synthesis accordingly. "
+                    "Always search the Bible to find relevant context before answering. "
+                    "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
+                    "If you use a tool, explain your thought process briefly.")
+
+SYSTEM_PROMPT_EN = ("You are a theological assistant specializing in the English Standard Version (ESV) of the Bible. "
+                    "Your goal is to provide deep insights grounded in scripture. "
+                    "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
+                    "Tailor your search and synthesis accordingly. "
+                    "Always search the Bible to find relevant context before answering. "
+                    "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
+                    "If you use a tool, explain your thought process briefly.")
+
 MAX_TOOL_ROUNDS = 5
 TOOLS = [
     {
@@ -74,11 +116,12 @@ class BibleAgent:
         self.client = openai_client
         self.supabase = supabase_client
         self.model = os.environ.get("AGENT_MODEL", "moonshotai/kimi-k2.6")
+        self.current_version = "NKRV"
     
     def extract_citations(self, text: str) -> List[Dict[str, Any]]:
         # Regex to match [Book Chapter:Verse-Verse] or [Book Chapter:Verse]
-        # Example: [창세기 1:1-5], [마태복음 5:3]
-        pattern = r"\[([\uac00-\ud7af]+)\s+(\d+):(\d+)(?:-(\d+))?\]"
+        # Example: [창세기 1:1-5], [마태복음 5:3], [Psalm 23:1]
+        pattern = r"\[([^\[\]]+?)\s+(\d+):(\d+)(?:-(\d+))?\]"
         matches = re.finditer(pattern, text)
         citations = []
         for match in matches:
@@ -102,13 +145,14 @@ class BibleAgent:
             )
             query_embedding = response.data[0].embedding
 
-            # 2. Call Supabase RPC
+            # 2. Call the version-aware Supabase RPC
             result = self.supabase.rpc(
-                "match_bible_sections",
+                "match_bible_sections_v",
                 {
                     "query_embedding": query_embedding,
                     "match_threshold": 0.3,
-                    "match_count": limit
+                    "match_count": limit,
+                    "version_filter": self.current_version
                 }
             ).execute()
             
@@ -123,8 +167,9 @@ class BibleAgent:
             end = verse_end if verse_end is not None else verse_start
             result = self.supabase.table("bible_verses") \
                 .select("book, chapter, verse_start, verse_end, text") \
-                .eq("book", book) \
+                .eq("book", EN_TO_KO.get(book, book)) \
                 .eq("chapter", chapter) \
+                .eq("version", self.current_version) \
                 .gte("verse_start", verse_start) \
                 .lte("verse_end", end) \
                 .order("verse_start") \
@@ -178,14 +223,11 @@ class BibleAgent:
         ).strip()
 
     def run(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatResponse:
+        self.current_version = detect_version(user_message)
+        system_prompt = SYSTEM_PROMPT_KR if self.current_version == "NKRV" else SYSTEM_PROMPT_EN
+
         messages = [
-            {"role": "system", "content": "You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
-                                          "Your goal is to provide deep insights grounded in scripture. "
-                                          "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
-                                          "Tailor your search and synthesis accordingly. "
-                                          "Always search the Bible to find relevant context before answering. "
-                                          "When you answer, provide citations in the format [Book Chapter:Verse]. "
-                                          "If you use a tool, explain your thought process briefly."},
+            {"role": "system", "content": system_prompt},
             *(history or [])[-10:],
             {"role": "user", "content": user_message}
         ]

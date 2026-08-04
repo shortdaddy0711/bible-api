@@ -4,8 +4,8 @@ This directory contains the FastAPI backend for the Logos Mind project. It provi
 
 ## Features
 
-- **Semantic Bible Search:** Find verses based on meaning, not just exact keywords.
-- **Exact Text Retrieval:** Fetch specific books, chapters, and verse ranges.
+- **Bilingual Bible Search:** Semantic search returns the Revised Korean Version (개역개정) for Korean queries and the English Standard Version for English queries.
+- **Exact Text Retrieval:** Fetch specific books, chapters, and verse ranges in either version.
 - **Multi-Chapter Retrieval:** Fetch full text for a range of chapters at once.
 - **Sermon Quote Retrieval:** Find relevant sermon excerpts based on a topic or verse reference (Preparation for Phase 3).
 - **Auto-generated Documentation:** Interactive API documentation via Swagger UI.
@@ -65,20 +65,28 @@ Once the server is running, you can access the automatically generated interacti
 ## Core Endpoints
 
 - `GET /api/bible/search`
-  - Parameters: `query` (string), `limit` (int)
-  - Description: Performs a vector similarity search on the `bible_verses` table.
+  - Parameters: `query` (string), `limit` (int), `version` (optional: `NKRV` or `ESV`, auto-detected from query language by default)
+  - Description: Performs a vector similarity search on the `bible_sections` table.
 - `GET /api/bible/text`
-  - Parameters: `book` (string), `chapter` (int), `verse_start` (int), `verse_end` (optional int)
+  - Parameters: `book` (string), `chapter` (int), `verse_start` (int), `verse_end` (optional int), `version` (optional)
   - Description: Returns the exact text for the requested passage.
 - `GET /api/bible/chapters`
-  - Parameters: `book` (string), `chapter_start` (int), `chapter_end` (optional int)
+  - Parameters: `book` (string), `chapter_start` (int), `chapter_end` (optional int), `version` (optional)
   - Description: Returns all verses for the requested range of chapters.
 - `GET /api/sermons/search`
   - Parameters: `query` (string), `limit` (int)
   - Description: Performs a vector similarity search on the `sermons` table.
 - `POST /api/chat`
   - Body: `{ "message": string, "history": Array }`
-  - Description: Agentic chat interface that uses the Bible and sermon tools to provide theological answers.
+  - Description: Agentic chat interface that uses the Bible and sermon tools to provide theological answers. Answers in the query language (NKRV for Korean, ESV for English).
+
+## ESV Data Ingestion
+
+The ESV API free tier allows roughly 75 requests/day, so the full Bible (1,189 chapters) is ingested incrementally by the resumable script `scripts/ingest_esv.py` (it skips already-ingested chapters and prioritizes commonly used books). A GitHub Actions workflow (`.github/workflows/ingest-esv.yml`) runs it daily at 05:30 UTC on the self-hosted runner; it can also be triggered manually via `workflow_dispatch`.
+
+The script reads `ESV_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `OPENROUTER_API_KEY` from the environment. To run manually: `uv run python scripts/ingest_esv.py`.
+
+Schema migrations (e.g., the `version` column and the `match_bible_sections_v` RPC) live in `scripts/schema_update.py`, which runs SQL on the VPS over SSH using the `SSH_*` environment variables.
 
 ## Deployment
 
