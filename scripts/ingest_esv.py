@@ -232,7 +232,7 @@ def run_ingestion():
             continue
         for chapter in chapters:
             processed += 1
-            if chapter_already_ingested(book, chapter):
+            if chapter_already_ingested(en_book, chapter):
                 continue
             try:
                 passage = fetch_esv_passage(en_book, chapter)
@@ -251,13 +251,13 @@ def run_ingestion():
                 logger.warning("No verses parsed for %s %d", book, chapter)
                 continue
             verse_rows = [
-                {"book": book, "chapter": chapter, "verse_start": n, "verse_end": n,
+                {"book": en_book, "chapter": chapter, "verse_start": n, "verse_end": n,
                  "text": text, "version": VERSION}
                 for n, text in verses.items()
             ]
             insert_rows("bible_verses", verse_rows)
             pericopes = pericope_map.get(en_book, {}).get(str(chapter), [])
-            sections = build_sections(book, chapter, verses, pericopes)
+            sections = build_sections(en_book, chapter, verses, pericopes)
             insert_rows("bible_sections", sections)
             if processed % 25 == 0:
                 logger.info("Processed %d/%d chapters", processed, total)

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional
-from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, display_book, ESV_COPYRIGHT
+from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, canonical_book, ESV_COPYRIGHT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -93,6 +93,13 @@ def resolve_versions(book: str, version: Optional[str]) -> List[str]:
         return [version.upper()]
     return [detect_version(book)]
 
+def db_book_names(book: str, versions: List[str]) -> List[str]:
+    """ESV rows are stored under English book names, NKRV under Korean."""
+    names = set()
+    for v in versions:
+        names.add(canonical_book(book) if v == "ESV" else normalize_book(book))
+    return list(names)
+
 @app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
     query: str = Query(..., description="Semantic search query"),
@@ -127,7 +134,6 @@ async def search_bible(
         rows = result.data
         for row in rows:
             row["version"] = row.get("version") or version
-            row["book"] = display_book(row.get("book", ""), row["version"])
             if row["version"] == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         return rows
@@ -156,7 +162,7 @@ async def get_bible_text(
         # Query Supabase exactly for the requested range
         result = supabase.table("bible_verses") \
             .select("id, book, chapter, verse_start, verse_end, text, version") \
-            .eq("book", normalize_book(book)) \
+            .in_("book", db_book_names(book, versions)) \
             .eq("chapter", chapter) \
             .in_("version", versions) \
             .gte("verse_start", verse_start) \
@@ -171,7 +177,6 @@ async def get_bible_text(
             
         rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
         for row in rows:
-            row["book"] = display_book(row.get("book", ""), row.get("version", ""))
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {len(rows)} verses")
@@ -200,7 +205,7 @@ async def get_bible_chapters(
         # Query Supabase for the requested chapter range
         result = supabase.table("bible_verses") \
             .select("id, book, chapter, verse_start, verse_end, text, version") \
-            .eq("book", normalize_book(book)) \
+            .in_("book", db_book_names(book, versions)) \
             .in_("version", versions) \
             .gte("chapter", chapter_start) \
             .lte("chapter", end) \
@@ -215,7 +220,6 @@ async def get_bible_chapters(
             
         rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
         for row in rows:
-            row["book"] = display_book(row.get("book", ""), row.get("version", ""))
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(rows)} verses")

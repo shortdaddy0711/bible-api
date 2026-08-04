@@ -49,11 +49,11 @@ def normalize_book(book: str) -> str:
     """Map an English book name (any case) to the Korean name used in the DB."""
     return EN_TO_KO.get(book) or EN_TO_KO_LOWER.get(book.lower()) or book
 
-def display_book(book: str, version: str) -> str:
-    """Book name to show to clients: English for ESV, Korean for NKRV."""
-    if version == "ESV":
-        return KO_TO_EN.get(book, book)
-    return book
+def canonical_book(book: str) -> str:
+    """Canonical English book name as stored in the DB (any case input)."""
+    return EN_NAMES_LOWER.get(book.lower(), book)
+
+EN_NAMES_LOWER = {v.lower(): v for v in KO_TO_EN.values()}
 
 SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
                     "Your goal is to provide deep insights grounded in scripture. "
@@ -172,12 +172,7 @@ class BibleAgent:
                 }
             ).execute()
 
-            rows = result.data
-            if self.current_version == "ESV":
-                for row in rows:
-                    row["book"] = KO_TO_EN.get(row["book"], row["book"])
-            
-            return json.dumps(rows, ensure_ascii=False)
+            return json.dumps(result.data, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Agent search_bible_tool error: {e}")
             return f"Error searching Bible: {str(e)}"
@@ -186,9 +181,11 @@ class BibleAgent:
         """Get the specific text of Bible verses."""
         try:
             end = verse_end if verse_end is not None else verse_start
+            # ESV rows are stored under English book names, NKRV under Korean
+            db_book = canonical_book(book) if self.current_version == "ESV" else normalize_book(book)
             result = self.supabase.table("bible_verses") \
                 .select("book, chapter, verse_start, verse_end, text") \
-                .eq("book", normalize_book(book)) \
+                .eq("book", db_book) \
                 .eq("chapter", chapter) \
                 .eq("version", self.current_version) \
                 .gte("verse_start", verse_start) \
@@ -196,13 +193,8 @@ class BibleAgent:
                 .order("verse_start") \
                 .limit(500) \
                 .execute()
-
-            rows = result.data
-            if self.current_version == "ESV":
-                for row in rows:
-                    row["book"] = KO_TO_EN.get(row["book"], row["book"])
             
-            return json.dumps(rows, ensure_ascii=False)
+            return json.dumps(result.data, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Agent get_bible_text_tool error: {e}")
             return f"Error getting Bible text: {str(e)}"
