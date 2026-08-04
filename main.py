@@ -7,7 +7,7 @@ import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
-from typing import List, Optional
+from typing import List, Optional, Dict, Union
 from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, canonical_book, ESV_COPYRIGHT
 
 # Setup logging
@@ -65,6 +65,9 @@ class VerseResponse(BaseModel):
     version: Optional[str] = None
     copyright: Optional[str] = None
 
+# Single version -> flat array; multiple versions -> { "NKRV": [...], "ESV": [...] }
+VerseListResponse = Union[List[VerseResponse], Dict[str, List[VerseResponse]]]
+
 class SermonResponse(BaseModel):
     id: str
     title: Optional[str] = None
@@ -99,6 +102,15 @@ def db_book_names(book: str, versions: List[str]) -> List[str]:
     for v in versions:
         names.add(canonical_book(book) if v == "ESV" else normalize_book(book))
     return list(names)
+
+def group_by_version(rows: List[dict], versions: List[str]):
+    """Flat array for a single version; {version: rows} when both are requested."""
+    if len(versions) <= 1:
+        return rows
+    grouped = {}
+    for v in versions:
+        grouped[v] = [r for r in rows if r.get("version") == v]
+    return grouped
 
 @app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
@@ -144,7 +156,7 @@ async def search_bible(
         logger.error(f"search_bible error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bible/text", response_model=List[VerseResponse])
+@app.get("/api/bible/text", response_model=VerseListResponse)
 async def get_bible_text(
     book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
     chapter: int = Query(..., description="Chapter number"),
@@ -180,7 +192,7 @@ async def get_bible_text(
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {len(rows)} verses")
-        return rows
+        return group_by_version(rows, versions)
         
     except HTTPException:
         raise
@@ -188,7 +200,7 @@ async def get_bible_text(
         logger.error(f"get_bible_text error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bible/chapters", response_model=List[VerseResponse])
+@app.get("/api/bible/chapters", response_model=VerseListResponse)
 async def get_bible_chapters(
     book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
     chapter_start: int = Query(..., description="Starting chapter number"),
@@ -223,7 +235,7 @@ async def get_bible_chapters(
             if row.get("version") == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(rows)} verses")
-        return rows
+        return group_by_version(rows, versions)
         
     except HTTPException:
         raise
