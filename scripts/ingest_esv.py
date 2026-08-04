@@ -182,11 +182,20 @@ def embed_sections():
         if not r.data:
             break
         texts = [f"[{s['book']} {s['chapter']}:{s['verse_range']}] {s['title']} - {s['content']}" for s in r.data]
-        resp = openai_client.embeddings.create(input=texts, model=EMBEDDING_MODEL)
-        embeds = [d.embedding for d in resp.data]
+        embeds = None
+        for attempt in range(4):
+            try:
+                resp = openai_client.embeddings.create(input=texts, model=EMBEDDING_MODEL)
+                embeds = [d.embedding for d in resp.data]
+                break
+            except Exception as e:
+                logger.warning("Embedding attempt %d failed: %s", attempt + 1, e)
+                time.sleep(10 * (attempt + 1))
+        if embeds is None:
+            raise RuntimeError("Embedding API persistently failing; re-run to continue")
         for s, emb in zip(r.data, embeds):
             supabase.table("bible_sections").update({"embedding": emb}).eq("id", s["id"]).execute()
-        logger.info("Embedded %d sections (%d remaining to find)", len(r.data), -1)
+        logger.info("Embedded %d sections", len(r.data))
 
 def run_ingestion():
     with open(PERICOPES_PATH, encoding="utf-8") as f:
@@ -213,7 +222,16 @@ def run_ingestion():
             processed += 1
             if chapter_already_ingested(book, chapter):
                 continue
-            passage = fetch_esv_passage(en_book, chapter)
+            try:
+                passage = fetch_esv_passage(en_book, chapter)
+            except RuntimeError as e:
+                # Rate limit exhausted: stop fetching, but still embed what we have
+                logger.warning("%s — stopping early, embedding ingested sections", e)
+                time.sleep(1)
+                embed_sections()
+                logger.info("Stopped early after %d/%d chapters; %d of %d books processed. Re-run later to resume.",
+                            processed, total, list(structure).index(book) + 1, len(structure))
+                return
             if passage is None:
                 continue
             verses = parse_passage(passage)
