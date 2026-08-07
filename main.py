@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import os
 import time
+import json
 import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -281,6 +283,18 @@ async def chat_with_agent(request: ChatRequest):
     except Exception as e:
         logger.error(f"chat_with_agent error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat/stream")
+async def chat_with_agent_stream(request: ChatRequest):
+    """Server-Sent Events: yields {type: delta, content} chunks, then {type: done, ...}."""
+    async def event_stream():
+        try:
+            for event in bible_agent.run_stream(request.message, request.history or []):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"chat_with_agent_stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)}, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/health")
 def health_check():

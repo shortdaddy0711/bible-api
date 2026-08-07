@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# bible — CLI for Bible study against the Logos Mind API.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --project "$DIR" python -m cli.main "$@"

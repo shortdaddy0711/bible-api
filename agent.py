@@ -241,20 +241,27 @@ class BibleAgent:
             flags=re.DOTALL,
         ).strip()
 
-    def run(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatResponse:
+    def _build_messages(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
         self.current_version = detect_version(user_message)
         system_prompt = SYSTEM_PROMPT_KR if self.current_version == "NKRV" else SYSTEM_PROMPT_EN
-
-        messages = [
+        return [
             {"role": "system", "content": system_prompt},
             *(history or [])[-10:],
             {"role": "user", "content": user_message}
         ]
 
-        thought_process = []
+    def _run_tool_loop(self, messages: List[Dict[str, Any]], thought_process: List[str], stream_final: bool = False):
+        """Drive the tool-call loop. Returns (response_message, tool_rounds, stream).
+        response_message is None if the loop exhausted all rounds on tool calls
+        (caller must then force a final answer without tools)."""
         response_message = None
-
+        tool_rounds = 0
+        stream = None
         for round_idx in range(MAX_TOOL_ROUNDS):
+            if stream_final and round_idx == MAX_TOOL_ROUNDS - 1:
+                # Last allowed round: stream the final answer instead of requesting tools
+                tool_rounds = round_idx + 1
+                return response_message, tool_rounds, self._final_stream(messages)
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -262,6 +269,7 @@ class BibleAgent:
                 tool_choice="auto"
             )
             response_message = response.choices[0].message
+            tool_rounds = round_idx + 1
             if not response_message.tool_calls:
                 break
 
@@ -289,6 +297,25 @@ class BibleAgent:
                     "content": result
                 })
         else:
+            # Loop exhausted without a final message: caller must force an answer
+            response_message = None
+        return response_message, tool_rounds, stream
+
+    def _final_stream(self, messages: List[Dict[str, Any]]):
+        """Stream a final answer without tools (used when max rounds reached or last chance)."""
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=True
+        )
+
+    def run(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatResponse:
+        messages = self._build_messages(user_message, history)
+
+        thought_process = []
+        response_message, _, _ = self._run_tool_loop(messages, thought_process)
+
+        if response_message is None:
             # Max rounds reached with tools still requested: force a final answer
             logger.warning("Max tool rounds reached; requesting final answer without tools")
             response = self.client.chat.completions.create(
@@ -306,3 +333,37 @@ class BibleAgent:
             thought=" -> ".join(thought_process) if thought_process else "Direct answer based on internal knowledge (cautioned).",
             citations=self.extract_citations(answer)
         )
+
+    def run_stream(self, user_message: str, history: Optional[List[Dict[str, str]]] = None):
+        """Generator yielding events: {"type": "delta", "content": str} and
+        {"type": "done", "answer": str, "thought": str, "citations": [...]}."""
+        messages = self._build_messages(user_message, history)
+        thought_process = []
+        response_message, _, stream = self._run_tool_loop(messages, thought_process, stream_final=True)
+
+        answer = None
+        if stream is not None:
+            chunks = []
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    piece = chunk.choices[0].delta.content
+                    chunks.append(piece)
+                    yield {"type": "delta", "content": piece}
+            answer = "".join(chunks)
+            if not answer and response_message and response_message.content:
+                answer = response_message.content
+        elif response_message:
+            answer = response_message.content or ""
+            if answer:
+                yield {"type": "delta", "content": answer}
+
+        answer = self.strip_tool_markup(answer) if answer else None
+        if not answer:
+            answer = "답변을 생성하지 못했습니다. 다시 시도해 주세요."
+
+        yield {
+            "type": "done",
+            "answer": answer,
+            "thought": " -> ".join(thought_process) if thought_process else "Direct answer based on internal knowledge (cautioned).",
+            "citations": self.extract_citations(answer)
+        }
