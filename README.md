@@ -155,39 +155,21 @@ BIBLE_API_URL=http://localhost:8080 ./bin/bible search "hello"
 
 ## Testing
 
-**Unit tests** (isolated, mocked — no server needed):
+Isolated unit tests (mocked `supabase`/`openai` — no server needed):
 
 ```bash
-uv sync --extra dev        # installs pytest
+uv sync --extra dev        # installs pytest + pytest-asyncio
 uv run pytest -v           # 68 tests: books, parser, agent, main helpers
 uv run pytest tests/test_unit_books.py -v
+uv run pytest tests/test_unit_agent.py::TestBuildMessages -v
 ```
 
-Integration / ad-hoc scripts in `tests/` hit a live API over HTTP. Start the server first:
+Coverage:
 
-```bash
-uv run uvicorn main:app --host 0.0.0.0 --port 8080 --reload
-# health check
-curl http://localhost:8080/health
-```
-
-Then:
-
-```bash
-uv run python tests/test_chat.py        # streaming chat (POST /api/chat/stream SSE)
-uv run python tests/test_api_search.py  # GET /api/bible/search
-uv run python tests/test_reasoning.py   # GET /api/bible/search (reasoning query)
-uv run python tests/test_esv_pericopes.py  # hits live ESV API (needs ESV_API_KEY in .env)
-uv run python tests/test_single.py      # ESV HTML fetch (needs ESV_API_KEY)
-```
-
-All `tests/*.py` default to `BASE_URL = "http://localhost:8080"`. To run against the deployed VPS, either edit `BASE_URL` or run a one-liner:
-
-```bash
-BASE_URL=http://76.13.110.111:8080 uv run python tests/test_chat.py
-# or the comprehensive check used in CI/debugging:
-uv run python /tmp/run_remote_tests.py   # health, search, text, chapters, chat_stream, CLI
-```
+- `tests/test_unit_books.py` — `detect_version`, `normalize_book`, `canonical_book`, `to_db_book`, `db_book_names`, `ko_to_en`
+- `tests/test_unit_parser.py` — `cli/parser.parse_reference` & `cli/client.parse_reference`
+- `tests/test_unit_agent.py` — `extract_citations`, `strip_tool_markup`, `_build_messages`, `run_stream`/`run`, `search_bible_tool`
+- `tests/test_unit_main.py` — `resolve_versions`, `group_by_version`
 
 ## ESV Data Ingestion
 
