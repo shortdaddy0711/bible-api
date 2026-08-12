@@ -155,7 +155,15 @@ BIBLE_API_URL=http://localhost:8080 ./bin/bible search "hello"
 
 ## Testing
 
-Tests are ad-hoc scripts in `tests/` (not `pytest`) that hit the API over HTTP. Start the server first:
+**Unit tests** (isolated, mocked — no server needed):
+
+```bash
+uv sync --extra dev        # installs pytest
+uv run pytest -v           # 68 tests: books, parser, agent, main helpers
+uv run pytest tests/test_unit_books.py -v
+```
+
+Integration / ad-hoc scripts in `tests/` hit a live API over HTTP. Start the server first:
 
 ```bash
 uv run uvicorn main:app --host 0.0.0.0 --port 8080 --reload

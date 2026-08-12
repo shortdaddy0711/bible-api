@@ -97,7 +97,7 @@ def resolve_versions(book: str, version: Optional[str]) -> List[str]:
         normalized = version.strip().lower().replace(" ", "")
         if normalized == "all" or normalized == "nkrv,esv" or normalized == "esv,nkrv":
             return ["NKRV", "ESV"]
-        return [version.upper()]
+        return [version.strip().upper()]
     return [detect_version(book)]
 
 def group_by_version(rows: List[dict], versions: List[str]):
