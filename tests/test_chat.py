@@ -13,14 +13,25 @@ def test_chat():
     
     print(f"Sending query: {query}")
     try:
-        response = requests.post(f"{BASE_URL}/api/chat", json=payload)
+        # Streaming endpoint is now the only chat API
+        response = requests.post(f"{BASE_URL}/api/chat/stream", json=payload, stream=True, headers={"Accept": "text/event-stream"})
         if response.status_code == 200:
-            result = response.json()
-            print("\n--- Agent Response ---")
-            print(f"Thought: {result.get('thought')}")
-            print(f"Answer:\n{result.get('answer')}")
-            print("\n--- Citations ---")
-            print(json.dumps(result.get('citations'), indent=2, ensure_ascii=False))
+            answer_parts = []
+            for line in response.iter_lines():
+                if line and line.startswith(b"data: "):
+                    event = json.loads(line[6:])
+                    if event.get("type") == "delta":
+                        answer_parts.append(event.get("content", ""))
+                    elif event.get("type") == "done":
+                        print("\n--- Agent Response ---")
+                        print(f"Thought: {event.get('thought')}")
+                        print(f"Answer:\n{event.get('answer')}")
+                        print("\n--- Citations ---")
+                        print(json.dumps(event.get('citations'), indent=2, ensure_ascii=False))
+                        break
+                    elif event.get("type") == "error":
+                        print(f"Chat error: {event.get('detail')}")
+                        break
         else:
             print(f"Chat failed: {response.status_code}")
             print(response.text)

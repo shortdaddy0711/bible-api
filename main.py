@@ -270,15 +270,6 @@ async def find_pastor_quotes(
         logger.error(f"find_pastor_quotes error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_with_agent(request: ChatRequest):
-    try:
-        response = bible_agent.run(request.message, request.history or [])
-        return response
-    except Exception as e:
-        logger.error(f"chat_with_agent error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/chat/stream")
 async def chat_with_agent_stream(request: ChatRequest):
     """Server-Sent Events: yields {type: delta, content} chunks, then {type: done, ...}."""

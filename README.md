@@ -76,9 +76,9 @@ Once the server is running, you can access the automatically generated interacti
 - `GET /api/sermons/search`
   - Parameters: `query` (string), `limit` (int)
   - Description: Performs a vector similarity search on the `sermons` table.
-- `POST /api/chat`
+- `POST /api/chat/stream`
   - Body: `{ "message": string, "history": Array }`
-  - Description: Agentic chat interface that uses the Bible and sermon tools to provide theological answers. Answers in the query language (NKRV for Korean, ESV for English).
+  - Description: Streaming agentic chat (Server-Sent Events) that uses the Bible and sermon tools to provide theological answers. Yields `data: {"type":"delta","content":...}` chunks then `data: {"type":"done","answer","thought","citations"}`. Answers in the query language (NKRV for Korean, ESV for English).
 
 ## ESV Data Ingestion
 
