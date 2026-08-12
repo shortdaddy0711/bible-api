@@ -20,7 +20,7 @@ def test_chat():
                 if line and line.startswith(b"data: "):
                     event = json.loads(line[6:])
                     if event.get("type") == "delta":
-                        answer_parts.append(event.get("content", ""))
+                        continue
                     elif event.get("type") == "done":
                         print("\n--- Agent Response ---")
                         print(f"Thought: {event.get('thought')}")
