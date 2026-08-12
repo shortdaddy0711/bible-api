@@ -1,4 +1,4 @@
-from agent import normalize_book, canonical_book, detect_version
+from books import detect_version, to_db_book
 
 class ReferenceError(Exception):
     pass
@@ -55,4 +55,4 @@ def parse_reference(ref: str) -> Reference:
 
 
 def db_book(book: str) -> str:
-    return canonical_book(book) if detect_version(book) == "ESV" else normalize_book(book)
+    return to_db_book(book, detect_version(book))

@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional, Dict, Union
-from agent import BibleAgent, ChatRequest, ChatResponse, detect_version, normalize_book, canonical_book, ESV_COPYRIGHT
+from agent import BibleAgent, ChatRequest, ChatResponse, ESV_COPYRIGHT
+from books import detect_version, db_book_names
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -97,13 +98,6 @@ def resolve_versions(book: str, version: Optional[str]) -> List[str]:
             return ["NKRV", "ESV"]
         return [version.upper()]
     return [detect_version(book)]
-
-def db_book_names(book: str, versions: List[str]) -> List[str]:
-    """ESV rows are stored under English book names, NKRV under Korean."""
-    names = set()
-    for v in versions:
-        names.add(canonical_book(book) if v == "ESV" else normalize_book(book))
-    return list(names)
 
 def group_by_version(rows: List[dict], versions: List[str]):
     """Flat array for a single version; {version: rows} when both are requested."""
