@@ -6,6 +6,7 @@ import os
 import time
 import json
 import logging
+import traceback
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
@@ -275,7 +276,7 @@ async def chat_with_agent(request: ChatRequest):
         response = bible_agent.run(request.message, request.history or [])
         return response
     except Exception as e:
-        logger.error(f"chat_with_agent error: {e}")
+        logger.error(f"chat_with_agent error: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat/stream")
@@ -286,7 +287,7 @@ async def chat_with_agent_stream(request: ChatRequest):
             for event in bible_agent.run_stream(request.message, request.history or []):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.error(f"chat_with_agent_stream error: {e}")
+            logger.error(f"chat_with_agent_stream error: {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(e)}, ensure_ascii=False)}\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

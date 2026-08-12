@@ -17,6 +17,7 @@ class ChatResponse(BaseModel):
     citations: List[Dict[str, Any]] = []
 
 import re
+import traceback
 
 # Single source of truth for book mappings — see books.py
 from books import (
@@ -129,6 +130,9 @@ class BibleAgent:
                 input=query,
                 model="openai/text-embedding-3-small"
             )
+            if not response or not getattr(response, "data", None) or not response.data or not response.data[0].embedding:
+                logger.error(f"Agent search_bible_tool: empty embedding response: {response}")
+                return "Error searching Bible: empty embedding response"
             query_embedding = response.data[0].embedding
 
             # 2. Call the version-aware Supabase RPC
@@ -144,7 +148,7 @@ class BibleAgent:
 
             return json.dumps(result.data, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Agent search_bible_tool error: {e}")
+            logger.error(f"Agent search_bible_tool error: {e}\n{traceback.format_exc()}")
             return f"Error searching Bible: {str(e)}"
 
     def get_bible_text_tool(self, book: str, chapter: int, verse_start: int, verse_end: Optional[int] = None) -> str:
@@ -166,7 +170,7 @@ class BibleAgent:
             
             return json.dumps(result.data, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Agent get_bible_text_tool error: {e}")
+            logger.error(f"Agent get_bible_text_tool error: {e}\n{traceback.format_exc()}")
             return f"Error getting Bible text: {str(e)}"
 
     def find_pastor_quotes_tool(self, query: str, limit: int = 3) -> str:
@@ -176,6 +180,9 @@ class BibleAgent:
                 input=query,
                 model="openai/text-embedding-3-small"
             )
+            if not response or not getattr(response, "data", None) or not response.data or not response.data[0].embedding:
+                logger.error(f"Agent find_pastor_quotes_tool: empty embedding response: {response}")
+                return "Error searching sermons: empty embedding response"
             query_embedding = response.data[0].embedding
 
             result = self.supabase.rpc(
@@ -189,7 +196,7 @@ class BibleAgent:
             
             return json.dumps(result.data, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Agent find_pastor_quotes_tool error: {e}")
+            logger.error(f"Agent find_pastor_quotes_tool error: {e}\n{traceback.format_exc()}")
             return f"Error searching sermons: {str(e)}"
 
     def call_tool(self, function_name: str, function_args: Dict[str, Any]) -> str:
@@ -204,6 +211,8 @@ class BibleAgent:
     @staticmethod
     def strip_tool_markup(text: str) -> str:
         # Safety net: remove kimi-style tool-call markup from final answers
+        if not text:
+            return ""
         return re.sub(
             r"<\|tool_calls_section_(?:begin|end)\|>.*?<\|tool_calls_section_(?:begin|end)\|>",
             "",
@@ -214,9 +223,27 @@ class BibleAgent:
     def _build_messages(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
         self.current_version = detect_version(user_message)
         system_prompt = SYSTEM_PROMPT_KR if self.current_version == "NKRV" else SYSTEM_PROMPT_EN
+        # Sanitize history: drop non-dict entries or entries with None content to avoid LLM returning None choices
+        sanitized_history = []
+        for h in (history or [])[-10:]:
+            if not isinstance(h, dict):
+                continue
+            role = h.get("role")
+            content = h.get("content")
+            if role not in ("user", "assistant", "system", "tool"):
+                continue
+            if not isinstance(content, str) or not content.strip():
+                continue
+            # Keep optional tool fields if present
+            entry = {"role": role, "content": content}
+            if h.get("tool_call_id"):
+                entry["tool_call_id"] = h["tool_call_id"]
+            if h.get("name"):
+                entry["name"] = h["name"]
+            sanitized_history.append(entry)
         return [
             {"role": "system", "content": system_prompt},
-            *(history or [])[-10:],
+            *sanitized_history,
             {"role": "user", "content": user_message}
         ]
 
@@ -238,7 +265,14 @@ class BibleAgent:
                 tools=TOOLS,
                 tool_choice="auto"
             )
-            response_message = response.choices[0].message
+            if not response or not getattr(response, "choices", None) or not response.choices:
+                logger.error(f"_run_tool_loop: empty choices response: {response}\n{traceback.format_exc()}")
+                raise RuntimeError("LLM returned empty choices")
+            msg = response.choices[0].message if response.choices[0] else None
+            if msg is None:
+                logger.error(f"_run_tool_loop: choices[0].message is None: {response}\n{traceback.format_exc()}")
+                raise RuntimeError("LLM returned None message")
+            response_message = msg
             tool_rounds = round_idx + 1
             if not response_message.tool_calls:
                 break
@@ -292,9 +326,12 @@ class BibleAgent:
                 model=self.model,
                 messages=messages
             )
+            if not response or not getattr(response, "choices", None) or not response.choices or not response.choices[0].message:
+                logger.error(f"run fallback: empty choices: {response}\n{traceback.format_exc()}")
+                raise RuntimeError("LLM fallback returned empty choices")
             response_message = response.choices[0].message
 
-        answer = self.strip_tool_markup(response_message.content) if response_message else None
+        answer = self.strip_tool_markup(response_message.content) if response_message and response_message.content else None
         if not answer:
             answer = "답변을 생성하지 못했습니다. 다시 시도해 주세요."
 
