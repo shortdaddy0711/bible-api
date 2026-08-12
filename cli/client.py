@@ -58,6 +58,21 @@ class BibleClient:
             **({"version": version} if version else {}),
         })
 
+    def chat(self, message: str, history: list | None = None) -> dict:
+        """Non-streaming chat (aggregates chat_stream) — kept for backward compat."""
+        answer_parts: list[str] = []
+        done: dict | None = None
+        for event in self.chat_stream(message, history):
+            if event.get("type") == "error":
+                raise BibleAPIError(str(event.get("detail", "unknown error")))
+            if event.get("type") == "delta":
+                answer_parts.append(event.get("content", ""))
+            elif event.get("type") == "done":
+                done = event
+        if done is not None:
+            return done
+        return {"answer": "".join(answer_parts)}
+
     def chat_stream(self, message: str, history: list | None = None):
         """Yield parsed SSE events: {"type": "delta"|"done"|"error", ...}."""
         try:

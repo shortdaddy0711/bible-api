@@ -316,6 +316,8 @@ class BibleAgent:
         """Non-streaming wrapper around run_stream (kept for tests/scripts)."""
         done = None
         for event in self.run_stream(user_message, history):
+            if event.get("type") == "error":
+                raise RuntimeError(event.get("detail", "run_stream error"))
             if event.get("type") == "done":
                 done = event
         if done is None:
