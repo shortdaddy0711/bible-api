@@ -1,5 +1,4 @@
 import os
-import json
 import httpx
 
 DEFAULT_API_URL = os.environ.get("BIBLE_API_URL", "http://76.13.110.111:8080")
@@ -58,19 +57,6 @@ class BibleClient:
             "query": query, "limit": limit,
             **({"version": version} if version else {}),
         })
-
-    def chat(self, message: str, history: list | None = None) -> dict:
-        try:
-            resp = httpx.post(
-                f"{self.base_url}/api/chat/stream",
-                json={"message": message, "history": history or []},
-                timeout=self.timeout,
-            )
-        except httpx.HTTPError as e:
-            raise BibleAPIError(f"Network error: {e}")
-        if resp.status_code != 200:
-            raise BibleAPIError(f"{resp.status_code}: {self._detail(resp)}")
-        return {"answer": resp.text}
 
     def chat_stream(self, message: str, history: list | None = None):
         """Yield parsed SSE events: {"type": "delta"|"done"|"error", ...}."""

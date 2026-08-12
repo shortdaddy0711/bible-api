@@ -21,7 +21,6 @@ import traceback
 
 # Single source of truth for book mappings — see books.py
 from books import (
-    KO_TO_EN,
     detect_version,
     to_db_book,
 )
@@ -314,31 +313,17 @@ class BibleAgent:
         )
 
     def run(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatResponse:
-        messages = self._build_messages(user_message, history)
-
-        thought_process = []
-        response_message, _, _ = self._run_tool_loop(messages, thought_process)
-
-        if response_message is None:
-            # Max rounds reached with tools still requested: force a final answer
-            logger.warning("Max tool rounds reached; requesting final answer without tools")
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages
-            )
-            if not response or not getattr(response, "choices", None) or not response.choices or not response.choices[0].message:
-                logger.error(f"run fallback: empty choices: {response}\n{traceback.format_exc()}")
-                raise RuntimeError("LLM fallback returned empty choices")
-            response_message = response.choices[0].message
-
-        answer = self.strip_tool_markup(response_message.content) if response_message and response_message.content else None
-        if not answer:
-            answer = "답변을 생성하지 못했습니다. 다시 시도해 주세요."
-
+        """Non-streaming wrapper around run_stream (kept for tests/scripts)."""
+        done = None
+        for event in self.run_stream(user_message, history):
+            if event.get("type") == "done":
+                done = event
+        if done is None:
+            raise RuntimeError("run_stream produced no done event")
         return ChatResponse(
-            answer=answer,
-            thought=" -> ".join(thought_process) if thought_process else "Direct answer based on internal knowledge (cautioned).",
-            citations=self.extract_citations(answer)
+            answer=done["answer"],
+            thought=done.get("thought"),
+            citations=done.get("citations", []),
         )
 
     def run_stream(self, user_message: str, history: Optional[List[Dict[str, str]]] = None):

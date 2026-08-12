@@ -16,7 +16,6 @@ def test_chat():
         # Streaming endpoint is now the only chat API
         response = requests.post(f"{BASE_URL}/api/chat/stream", json=payload, stream=True, headers={"Accept": "text/event-stream"})
         if response.status_code == 200:
-            answer_parts = []
             for line in response.iter_lines():
                 if line and line.startswith(b"data: "):
                     event = json.loads(line[6:])

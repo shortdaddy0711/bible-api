@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
 from typing import List, Optional, Dict, Union
-from agent import BibleAgent, ChatRequest, ChatResponse, ESV_COPYRIGHT
+from agent import BibleAgent, ChatRequest, ESV_COPYRIGHT
 from books import detect_version, db_book_names
 
 # Setup logging
