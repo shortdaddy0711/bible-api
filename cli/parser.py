@@ -21,7 +21,7 @@ class Reference:
 
 
 def parse_reference(ref: str) -> Reference:
-    """Parse '시편 23:1-3' / 'John 3:16' / '창세기 1' (whole chapter)."""
+    """Parse 'Psalm 23:1-3' / 'John 3:16' / 'Genesis 1' (whole chapter)."""
     parts = ref.strip().split()
     if not parts:
         raise ReferenceError("Empty reference")

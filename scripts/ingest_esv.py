@@ -40,10 +40,13 @@ FETCH_PACING_S = 1.1
 PERICOPES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pericope_map.json")
 
 # Commonly used books first so English search/chat gets useful results sooner
-BOOK_PRIORITY = ['시편', '요한복음', '마태복음', '누가복음', '마가복음', '창세기', '로마서', '잠언',
-                 '이사야', '출애굽기', '고린도전서', '고린도후서', '사도행전', '에베소서', '갈라디아서',
-                 '빌립보서', '골로새서', '데살로니가전서', '디모데후서', '히브리서', '베드로전서',
-                 '요한일서', '요한계시록', '다니엘', '에스더', '룻기']
+# English names only — KO_TO_EN remains the sole Korean source
+BOOK_PRIORITY_EN = ['Psalms', 'John', 'Matthew', 'Luke', 'Mark', 'Genesis', 'Romans', 'Proverbs',
+                    'Isaiah', 'Exodus', '1 Corinthians', '2 Corinthians', 'Acts', 'Ephesians', 'Galatians',
+                    'Philippians', 'Colossians', '1 Thessalonians', '2 Timothy', 'Hebrews', '1 Peter',
+                    '1 John', 'Revelation', 'Daniel', 'Esther', 'Ruth']
+# Derive Korean priority for NKRV-ordered structure (preserves BOOK_PRIORITY_EN order)
+BOOK_PRIORITY = [k for en in BOOK_PRIORITY_EN for k, v in KO_TO_EN.items() if v == en]
 
 def get_book_structure() -> Dict[str, List[int]]:
     structure: Dict[str, set] = {}

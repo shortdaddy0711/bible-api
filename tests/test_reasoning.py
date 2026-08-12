@@ -4,7 +4,7 @@ import json
 BASE_URL = "http://localhost:8080"
 
 def test_search():
-    query = "태초에 하나님이 천지를 창조하시니라"
+    query = "In the beginning God created the heavens and the earth"
     response = requests.get(f"{BASE_URL}/api/bible/search", params={"query": query})
     if response.status_code == 200:
         print("Search successful:")

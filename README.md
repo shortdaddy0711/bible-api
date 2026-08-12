@@ -109,21 +109,21 @@ bin/bible text --help
 **One-shot commands:**
 
 ```bash
-# exact verse lookup (Korean or English, any case)
-./bin/bible text "시편 23:1-3"
+# exact verse lookup (book names via books.py, any case)
+./bin/bible text "Psalm 23:1-3"
 ./bin/bible text "Genesis 1:1" --version ESV
 ./bin/bible text "Genesis 1:1" --version all   # {"NKRV": [...], "ESV": [...]}
 
 # semantic search (bible_sections)
-./bin/bible search "천지창조" --limit 5
+./bin/bible search "creation" --limit 5
 ./bin/bible search "the good shepherd" --limit 5 --version ESV
 
 # sermon archive search
-./bin/bible sermons "십자가" --limit 3
+./bin/bible sermons "cross" --limit 3
 
 # agentic chat (streaming, same as REPL)
 ./bin/bible chat "Explain Genesis 1 creation"
-./bin/bible chat "천지창조에 대해 설명해줘" --no-copyright
+./bin/bible chat "Explain the creation story" --no-copyright
 ```
 
 **REPL (interactive):**
@@ -135,9 +135,9 @@ bin/bible text --help
 Inside `bible> `:
 
 ```
-시편 23:1              # bare verse ref → exact lookup
-/search 천지창조      # semantic search
-/sermons 십자가        # sermon search
+Psalm 23:1              # bare verse ref → exact lookup
+/search creation      # semantic search
+/sermons cross        # sermon search
 /reset               # clear conversation history
 /copyright           # toggle ESV copyright footer
 /help                # show commands

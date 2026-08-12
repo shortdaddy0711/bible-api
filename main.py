@@ -155,7 +155,7 @@ async def search_bible(
 
 @app.get("/api/bible/text", response_model=VerseListResponse)
 async def get_bible_text(
-    book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
+    book: str = Query(..., description="Name of the book (e.g., Genesis)"),
     chapter: int = Query(..., description="Chapter number"),
     verse_start: int = Query(..., description="Starting verse number"),
     verse_end: Optional[int] = Query(None, description="Ending verse number (inclusive)"),
@@ -165,7 +165,6 @@ async def get_bible_text(
         # Determine the end verse range
         end = verse_end if verse_end is not None else verse_start
 
-        # English book names map to the Korean names used in the DB
         versions = resolve_versions(book, version)
 
         # Query Supabase exactly for the requested range
@@ -199,7 +198,7 @@ async def get_bible_text(
 
 @app.get("/api/bible/chapters", response_model=VerseListResponse)
 async def get_bible_chapters(
-    book: str = Query(..., description="Name of the book (e.g., 창세기 or Genesis)"),
+    book: str = Query(..., description="Name of the book (e.g., Genesis)"),
     chapter_start: int = Query(..., description="Starting chapter number"),
     chapter_end: Optional[int] = Query(None, description="Ending chapter number (inclusive)"),
     version: Optional[str] = Query(None, description="NKRV, ESV, or both: 'all' / 'NKRV,ESV' (defaults by book language)")
@@ -208,7 +207,6 @@ async def get_bible_chapters(
         # Determine the end chapter range
         end = chapter_end if chapter_end is not None else chapter_start
 
-        # English book names map to the Korean names used in the DB
         versions = resolve_versions(book, version)
 
         # Query Supabase for the requested chapter range
@@ -242,7 +240,7 @@ async def get_bible_chapters(
 
 @app.get("/api/sermons/search", response_model=List[SermonResponse])
 async def find_pastor_quotes(
-    query: str = Query(..., description="Verse reference or topic to find in sermons (e.g., '창세기 1:1')"),
+    query: str = Query(..., description="Verse reference or topic to find in sermons (e.g., 'Genesis 1:1')"),
     limit: int = Query(3, ge=1, le=10)
 ):
     try:

@@ -5,7 +5,7 @@ import time
 BASE_URL = "http://localhost:8080"
 
 def test_chat():
-    query = "천지창조에 대해 성경 내용을 바탕으로 설명해주고, 관련 구절을 인용해줘."
+    query = "Explain the creation story based on the Bible and cite relevant verses."
     payload = {
         "message": query,
         "history": []

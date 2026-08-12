@@ -19,5 +19,5 @@ def test_search(query):
 
 if __name__ == "__main__":
     # Test query related to a book we just uploaded (e.g., Psalms or John)
-    test_search("하나님은 나의 목자")
-    test_search("천지 창조")
+    test_search("The Lord is my shepherd")
+    test_search("creation of heaven and earth")

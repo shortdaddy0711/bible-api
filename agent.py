@@ -25,12 +25,12 @@ from books import (
     to_db_book,
 )
 
-SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (개역개정) of the Bible. "
+SYSTEM_PROMPT_KR = ("You are a theological assistant specializing in the Revised Korean Version (NKRV) of the Bible. "
                     "Your goal is to provide deep insights grounded in scripture. "
                     "Before answering, determine the user's intent: Is it historical, theological, or for encouragement? "
                     "Tailor your search and synthesis accordingly. "
                     "Always search the Bible to find relevant context before answering. "
-                    "When you answer, provide citations in the format [Book Chapter:Verse] using the Korean book name (e.g. [시편 23:1]). "
+                    "When you answer, provide citations in the format [Book Chapter:Verse] (e.g. [Psalms 23:1]). "
                     "If you use a tool, explain your thought process briefly.")
 
 ESV_COPYRIGHT = ("Scripture quotations are from The Holy Bible, English Standard Version® (ESV®), "
@@ -71,7 +71,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "book": {"type": "string", "description": "Book name in Korean (e.g., '창세기')"},
+                    "book": {"type": "string", "description": "Book name (e.g., 'Genesis')"},
                     "chapter": {"type": "integer", "description": "Chapter number"},
                     "verse_start": {"type": "integer", "description": "Start verse"},
                     "verse_end": {"type": "integer", "description": "End verse (optional)"}
@@ -106,7 +106,7 @@ class BibleAgent:
     
     def extract_citations(self, text: str) -> List[Dict[str, Any]]:
         # Regex to match [Book Chapter:Verse-Verse] or [Book Chapter:Verse]
-        # Example: [창세기 1:1-5], [마태복음 5:3], [Psalm 23:1]
+        # Example: [Genesis 1:1-5], [Matthew 5:3], [Psalm 23:1]
         pattern = r"\[([^\[\]]+?)\s+(\d+):(\d+)(?:-(\d+))?\]"
         matches = re.finditer(pattern, text)
         citations = []
@@ -353,7 +353,7 @@ class BibleAgent:
 
         answer = self.strip_tool_markup(answer) if answer else None
         if not answer:
-            answer = "답변을 생성하지 못했습니다. 다시 시도해 주세요."
+            answer = "Failed to generate an answer. Please try again."
 
         yield {
             "type": "done",

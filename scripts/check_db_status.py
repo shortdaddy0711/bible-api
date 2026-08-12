@@ -25,7 +25,7 @@ def check_db():
         print(f"Error counting verses: {e}")
         return
 
-    # 2. Check a few samples to verify version (개역개정)
+    # 2. Check a few samples to verify version (NKRV)
     try:
         sample_res = supabase.table("bible_verses").select("book, chapter, verse_start, text").limit(3).execute()
         print("\nSample Verses:")

@@ -18,7 +18,7 @@ BANNER = "✝ Bible Study CLI (Logos Mind)"
 
 def _print_help(console: Console):
     console.print(Panel(
-        "[bold]시편 23:1[/bold]            verse lookup from the prompt\n"
+        "[bold]Psalm 23:1[/bold]            verse lookup from the prompt\n"
         "[bold]/search <topic>[/bold]    semantic Bible search\n"
         "[bold]/sermons <topic>[/bold]   sermon archive search\n"
         "[bold]/reset[/bold]             clear conversation\n"
@@ -146,7 +146,7 @@ def _repl(client: BibleClient, console: Console, show_copyright: bool) -> int:
     readline.set_history_length(1000)
 
     console.print(Panel(BANNER, border_style="blue"))
-    console.print("[dim]Type a question, a verse reference (시편 23:1), or /help.[/dim]")
+    console.print("[dim]Type a question, a verse reference (Psalm 23:1), or /help.[/dim]")
 
     convo = []
     try:
@@ -196,7 +196,7 @@ def main(argv=None) -> int:
     parser.add_argument("--api-url", default=os.environ.get("BIBLE_API_URL"), help="API base URL")
     sub = parser.add_subparsers(dest="command")
 
-    p_text = sub.add_parser("text", help="Fetch exact verses: bible text '시편 23:1-3'")
+    p_text = sub.add_parser("text", help="Fetch exact verses: bible text 'Psalm 23:1-3'")
     p_text.add_argument("reference")
     p_text.add_argument("--version", default=None, help="NKRV, ESV, or 'all'")
 

@@ -98,7 +98,7 @@ class BibleClient:
 
 
 def parse_reference(ref: str) -> tuple[str, int, int, int]:
-    """Parse '시편 23:1-3' / 'John 3:16' / '창세기 1' -> (book, chapter, start, end)."""
+    """Parse 'Psalm 23:1-3' / 'John 3:16' / 'Genesis 1' -> (book, chapter, start, end)."""
     parts = ref.strip().split()
     if not parts:
         raise ValueError("Empty reference")
