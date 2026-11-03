@@ -83,20 +83,32 @@ def chapter_already_ingested(book: str, chapter: int) -> bool:
         .execute()
     if not r.data:
         return False
+    if len(r.data) == 1:
+        # No ESV chapter has a single verse. One row per chapter is the signature
+        # of a fetch that resolved "Book 1" as verse 1 instead of chapter 1.
+        logger.warning("Single-verse ESV rows for %s %d; deleting and re-ingesting", book, chapter)
+        delete_chapter(book, chapter)
+        return False
     if any("[" in v["text"] for v in r.data):
         # Legacy line-parser bug merged verses; markers prove corruption.
         logger.warning("Corrupted ESV rows for %s %d; deleting and re-ingesting", book, chapter)
-        supabase.table("bible_verses") \
-            .delete().eq("book", book).eq("chapter", chapter).eq("version", VERSION).execute()
-        supabase.table("bible_sections") \
-            .delete().eq("book", book).eq("chapter", chapter).eq("version", VERSION).execute()
+        delete_chapter(book, chapter)
         return False
     return True
+
+
+def delete_chapter(book: str, chapter: int) -> None:
+    for table in ("bible_verses", "bible_sections"):
+        supabase.table(table) \
+            .delete().eq("book", book).eq("chapter", chapter).eq("version", VERSION).execute()
+
 
 def fetch_esv_passage(en_book: str, chapter: int) -> Optional[str]:
     url = "https://api.esv.org/v3/passage/text/"
     params = {
-        "q": f"{en_book} {chapter}",
+        # "Philemon 1" resolves to verse 1 for single-chapter books; an explicit
+        # range always resolves to the chapter and still clamps at its last verse.
+        "q": f"{en_book} {chapter}:1-999",
         "include-verse-numbers": "true",
         "include-headings": "false",
         "include-passage-references": "false",
@@ -151,11 +163,17 @@ def build_sections(book: str, chapter: int, verses: Dict[int, str], pericopes: L
             "title": f"{book} {chapter}", "content": content, "version": VERSION
         })
         return sections
+    if pericopes[0]["start"] > v_nums[0]:
+        leading = [verses[v] for v in v_nums if v < pericopes[0]["start"]]
+        if leading:
+            sections.append({
+                "book": book, "chapter": chapter,
+                "verse_range": f"{v_nums[0]}-{pericopes[0]['start'] - 1}",
+                "title": f"{book} {chapter}", "content": " ".join(leading), "version": VERSION
+            })
     for idx, p in enumerate(pericopes):
-        start = 1 if idx == 0 else pericopes[idx - 1]["start"]
-        end = p["start"] - 1
-        if idx == len(pericopes) - 1:
-            end = max_v
+        start = p["start"]
+        end = pericopes[idx + 1]["start"] - 1 if idx + 1 < len(pericopes) else max_v
         vs = [verses[v] for v in range(start, end + 1) if v in verses]
         if not vs:
             continue

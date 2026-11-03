@@ -4789,13 +4789,42 @@
     ]
   },
   "Obadiah": {
-    "1": []
+    "1": [
+      {
+        "title": "Edom Will Be Humbled",
+        "start": 2
+      },
+      {
+        "title": "Edom’s Violence Against Jacob",
+        "start": 10
+      },
+      {
+        "title": "The Day of the Lord Is Near",
+        "start": 15
+      },
+      {
+        "title": "The Kingdom of the Lord",
+        "start": 19
+      }
+    ]
   },
   "Jude": {
     "1": [
       {
         "title": "Greeting",
         "start": 1
+      },
+      {
+        "title": "Judgment on False Teachers",
+        "start": 3
+      },
+      {
+        "title": "A Call to Persevere",
+        "start": 17
+      },
+      {
+        "title": "Doxology",
+        "start": 24
       }
     ]
   },
@@ -7864,6 +7893,18 @@
       {
         "title": "Greeting",
         "start": 1
+      },
+      {
+        "title": "Philemon’s Love and Faith",
+        "start": 4
+      },
+      {
+        "title": "Paul’s Plea for Onesimus",
+        "start": 8
+      },
+      {
+        "title": "Final Greetings",
+        "start": 23
       }
     ]
   },
@@ -10632,6 +10673,14 @@
       {
         "title": "Greeting",
         "start": 1
+      },
+      {
+        "title": "Support and Opposition",
+        "start": 5
+      },
+      {
+        "title": "Final Greetings",
+        "start": 13
       }
     ]
   },
@@ -10640,6 +10689,14 @@
       {
         "title": "Greeting",
         "start": 1
+      },
+      {
+        "title": "Walking in Truth and Love",
+        "start": 4
+      },
+      {
+        "title": "Final Greetings",
+        "start": 12
       }
     ]
   },

@@ -107,7 +107,8 @@ def run_extraction():
         en_book = KO_TO_EN.get(ko_book)
         if not en_book: continue
             
-        query = f"{en_book} {chapter}"
+        # A bare "Philemon 1" resolves to verse 1 for single-chapter books.
+        query = f"{en_book} {chapter}:1-999"
         print(f"[{i+1}/{total}] Processing {query}...")
         
         data = fetch_passage_html(query)
