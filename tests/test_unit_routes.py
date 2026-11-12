@@ -119,6 +119,18 @@ def test_invalid_version_is_422(monkeypatch, client):
     assert response.status_code == 422
 
 
+def test_lowercase_version_param_is_accepted(monkeypatch, client):
+    set_rows(monkeypatch, [verse("n1", 1, 1, "NKRV")])
+
+    response = client.get(
+        "/api/bible/chapters",
+        params={"book": "Genesis", "chapter_start": 1, "version": " nkrv "},
+    )
+
+    assert response.status_code == 200
+    assert list(response.json()["versions"]) == ["NKRV"]
+
+
 def test_lowercase_stored_version_is_not_dropped(monkeypatch, client):
     set_rows(monkeypatch, [verse("n1", 1, 1, "nkrv"), verse("e1", 1, 1, "ESV")])
 

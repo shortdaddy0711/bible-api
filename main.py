@@ -75,9 +75,27 @@ class Version(str, Enum):
     ESV = "ESV"
     ALL = "all"
 
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            for member in cls:
+                if member.value.lower() == normalized:
+                    return member
+        return None
+
 class SearchVersion(str, Enum):
     NKRV = "NKRV"
     ESV = "ESV"
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            for member in cls:
+                if member.value.lower() == normalized:
+                    return member
+        return None
 
 MAX_VERSES = 500
 

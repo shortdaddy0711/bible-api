@@ -5,7 +5,7 @@ FastAPI backend for Logos Mind. Bilingual Bible + sermon search over Supabase `p
 ## Features
 
 - **Bilingual Bible Search:** `NKRV` for Korean queries, `ESV` for English — auto-detected via `books.py:detect_version()` (Hangul regex), or explicit `?version=`
-- **Exact Text / Multi-Chapter Retrieval:** `GET /api/bible/text` and `GET /api/bible/chapters` accept Korean or English book names (any case) via `books.py:to_db_book()`. `version` is `NKRV`, `ESV`, or `all` (anything else is `422`). Every response is one envelope: `{"book": ..., "chapter_start": ..., "chapter_end": ..., "versions": {"NKRV": {"verses": [...], "truncated": false, "next_verse_id": null}, ...}}`. Each version is capped at 500 verses and reports `truncated` plus the first omitted row id.
+- **Exact Text / Multi-Chapter Retrieval:** `GET /api/bible/text` and `GET /api/bible/chapters` accept Korean or English book names (any case) via `books.py:to_db_book()`. `version` is `NKRV`, `ESV`, or `all` (case-insensitive; anything else is `422`). Every response is one envelope: `{"book": ..., "chapter_start": ..., "chapter_end": ..., "versions": {"NKRV": {"verses": [...], "truncated": false, "next_verse_id": null}, ...}}`. Each version is capped at 500 verses and reports `truncated` plus the first omitted row id.
 - **Sermon Quote Retrieval:** `GET /api/sermons/search` over `sermons` chunks
 - **Streaming Agentic Chat:** `POST /api/chat/stream` (SSE) — tool-calling loop (`search_bible`, `get_bible_text`, `find_pastor_quotes`) with citations and `thought`, sanitized `history`, ESV copyright appended for English answers
 - **Bilingual CLI:** `bin/bible` / `cli/` — one-shot `text`/`search`/`sermons`/`chat` + interactive REPL
