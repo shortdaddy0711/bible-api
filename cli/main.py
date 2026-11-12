@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from cli.client import BibleClient, BibleAPIError
+from cli.client import BibleClient, BibleAPIError, verse_rows
 from cli.parser import parse_reference, ReferenceError
 from cli.render import (
     render_chat_text, render_error, render_thought, render_verses, render_sections, render_sermons,
@@ -41,7 +41,7 @@ def _cmd_text(args, client: BibleClient, console: Console) -> int:
     except BibleAPIError as e:
         render_error(console, str(e))
         return 1
-    rows = list(data.values())[0] if isinstance(data, dict) else data
+    rows = verse_rows(data)
     render_verses(console, rows, title=str(ref))
     return 0
 
@@ -129,7 +129,7 @@ def _lookup_or_chat(client: BibleClient, console: Console, line: str,
         except BibleAPIError as e:
             render_error(console, str(e))
             return 1
-        rows = list(data.values())[0] if isinstance(data, dict) else data
+        rows = verse_rows(data)
         render_verses(console, rows, title=str(ref))
         return 0
     return _stream_chat(client, console, line, history, show_copyright)

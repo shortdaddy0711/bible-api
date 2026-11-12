@@ -10,9 +10,10 @@ import traceback
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from openai import OpenAI
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict
+from enum import Enum
 from agent import BibleAgent, ChatRequest, ESV_COPYRIGHT
-from books import detect_version, db_book_names
+from books import detect_version, to_db_book
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -69,8 +70,27 @@ class VerseResponse(BaseModel):
     version: Optional[str] = None
     copyright: Optional[str] = None
 
-# Single version -> flat array; multiple versions -> { "NKRV": [...], "ESV": [...] }
-VerseListResponse = Union[List[VerseResponse], Dict[str, List[VerseResponse]]]
+class Version(str, Enum):
+    NKRV = "NKRV"
+    ESV = "ESV"
+    ALL = "all"
+
+class SearchVersion(str, Enum):
+    NKRV = "NKRV"
+    ESV = "ESV"
+
+MAX_VERSES = 500
+
+class VersionVerses(BaseModel):
+    verses: List[VerseResponse]
+    truncated: bool = False
+    next_verse_id: Optional[str] = None
+
+class VersesResponse(BaseModel):
+    book: str
+    chapter_start: int
+    chapter_end: int
+    versions: Dict[str, VersionVerses]
 
 class SermonResponse(BaseModel):
     id: str
@@ -91,33 +111,54 @@ class SectionResponse(BaseModel):
     version: Optional[str] = None
     copyright: Optional[str] = None
 
-def resolve_versions(book: str, version: Optional[str]) -> List[str]:
-    """Resolve the version param to a list. 'all' or comma-separated returns both."""
-    if version:
-        normalized = version.strip().lower().replace(" ", "")
-        if normalized == "all" or normalized == "nkrv,esv" or normalized == "esv,nkrv":
-            return ["NKRV", "ESV"]
-        return [version.strip().upper()]
-    return [detect_version(book)]
+def resolve_versions(book: str, version: Optional[Version]) -> List[str]:
+    """Resolve the validated version param to the list of versions to query."""
+    if version is None:
+        return [detect_version(book)]
+    if version is Version.ALL:
+        return ["NKRV", "ESV"]
+    return [version.value]
 
-def group_by_version(rows: List[dict], versions: List[str]):
-    """Flat array for a single version; {version: rows} when both are requested."""
-    if len(versions) <= 1:
-        return rows
-    grouped = {}
-    for v in versions:
-        grouped[v] = [r for r in rows if r.get("version") == v]
-    return grouped
+def fetch_version_rows(book: str, chapter_start: int, chapter_end: int, version: str,
+                       verse_start: Optional[int] = None, verse_end: Optional[int] = None):
+    """Fetch one version's rows, capped per version. Returns (rows, truncated, next_verse_id)."""
+    query = supabase.table("bible_verses") \
+        .select("id, book, chapter, verse_start, verse_end, text, version") \
+        .eq("book", to_db_book(book, version)) \
+        .ilike("version", version) \
+        .gte("chapter", chapter_start) \
+        .lte("chapter", chapter_end)
+    if verse_start is not None:
+        query = query.gte("verse_start", verse_start).lte("verse_end", verse_end)
+    rows = query.order("chapter").order("verse_start").limit(MAX_VERSES + 1).execute().data or []
+    truncated = len(rows) > MAX_VERSES
+    next_verse_id = rows[MAX_VERSES]["id"] if truncated else None
+    rows = rows[:MAX_VERSES]
+    if version == "ESV":
+        for row in rows:
+            row["copyright"] = ESV_COPYRIGHT
+    return rows, truncated, next_verse_id
+
+def fetch_verses(book: str, chapter_start: int, chapter_end: int, versions: List[str],
+                 verse_start: Optional[int] = None, verse_end: Optional[int] = None):
+    """Fetch every requested version, including an empty block when a version has no rows."""
+    blocks = {}
+    for version in versions:
+        rows, truncated, next_verse_id = fetch_version_rows(
+            book, chapter_start, chapter_end, version, verse_start, verse_end
+        )
+        blocks[version] = VersionVerses(
+            verses=rows, truncated=truncated, next_verse_id=next_verse_id
+        )
+    return blocks
 
 @app.get("/api/bible/search", response_model=List[SectionResponse])
 async def search_bible(
     query: str = Query(..., description="Semantic search query"),
     limit: int = Query(5, ge=1, le=20),
-    version: Optional[str] = Query(None, description="NKRV or ESV (defaults to auto-detected from query language)")
+    version: Optional[SearchVersion] = Query(None, description="NKRV or ESV (defaults to auto-detected from query language)")
 ):
     try:
-        if version and version.lower().replace(" ", "") in ("all", "nkrv,esv", "esv,nkrv"):
-            raise HTTPException(status_code=422, detail="Semantic search is per-version; use 'NKRV' or 'ESV'")
         # 1. Embed the user's query
         response = openai_client.embeddings.create(
             input=query,
@@ -126,7 +167,7 @@ async def search_bible(
         query_embedding = response.data[0].embedding
 
         # 2. Detect version: Korean queries use NKRV, everything else uses ESV
-        version = version or detect_version(query)
+        version_value = version.value if version else detect_version(query)
 
         # 3. Call the version-aware Supabase RPC function (match_bible_sections_v)
         result = supabase.rpc(
@@ -135,14 +176,14 @@ async def search_bible(
                 "query_embedding": query_embedding,
                 "match_threshold": 0.3, # Slightly lower threshold for broader context
                 "match_count": limit,
-                "version_filter": version
+                "version_filter": version_value
             }
         ).execute()
         
-        logger.info(f"search_bible ({version}) response for query '{query}': {len(result.data)} results")
+        logger.info(f"search_bible ({version_value}) response for query '{query}': {len(result.data)} results")
         rows = result.data
         for row in rows:
-            row["version"] = row.get("version") or version
+            row["version"] = row.get("version") or version_value
             if row["version"] == "ESV":
                 row["copyright"] = ESV_COPYRIGHT
         return rows
@@ -153,42 +194,26 @@ async def search_bible(
         logger.error(f"search_bible error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bible/text", response_model=VerseListResponse)
+@app.get("/api/bible/text", response_model=VersesResponse)
 async def get_bible_text(
     book: str = Query(..., description="Name of the book (e.g., Genesis)"),
     chapter: int = Query(..., description="Chapter number"),
     verse_start: int = Query(..., description="Starting verse number"),
     verse_end: Optional[int] = Query(None, description="Ending verse number (inclusive)"),
-    version: Optional[str] = Query(None, description="NKRV, ESV, or both: 'all' / 'NKRV,ESV' (defaults by book language)")
+    version: Optional[Version] = Query(None, description="NKRV, ESV, or all (defaults by book language)")
 ):
     try:
-        # Determine the end verse range
         end = verse_end if verse_end is not None else verse_start
-
         versions = resolve_versions(book, version)
+        blocks = fetch_verses(book, chapter, chapter, versions, verse_start, end)
 
-        # Query Supabase exactly for the requested range
-        result = supabase.table("bible_verses") \
-            .select("id, book, chapter, verse_start, verse_end, text, version") \
-            .in_("book", db_book_names(book, versions)) \
-            .eq("chapter", chapter) \
-            .in_("version", versions) \
-            .gte("verse_start", verse_start) \
-            .lte("verse_end", end) \
-            .order("verse_start") \
-            .order("version") \
-            .execute()
-            
-        if not result.data:
+        if not any(block.verses for block in blocks.values()):
             logger.warning(f"get_bible_text no verses found for {book} {chapter}:{verse_start}-{end}")
             raise HTTPException(status_code=404, detail="Verses not found")
-            
-        rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
-        for row in rows:
-            if row.get("version") == "ESV":
-                row["copyright"] = ESV_COPYRIGHT
-        logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {len(rows)} verses")
-        return group_by_version(rows, versions)
+
+        total = sum(len(block.verses) for block in blocks.values())
+        logger.info(f"get_bible_text response for '{book} {chapter}:{verse_start}-{end}': {total} verses")
+        return VersesResponse(book=book, chapter_start=chapter, chapter_end=chapter, versions=blocks)
         
     except HTTPException:
         raise
@@ -196,41 +221,25 @@ async def get_bible_text(
         logger.error(f"get_bible_text error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bible/chapters", response_model=VerseListResponse)
+@app.get("/api/bible/chapters", response_model=VersesResponse)
 async def get_bible_chapters(
     book: str = Query(..., description="Name of the book (e.g., Genesis)"),
     chapter_start: int = Query(..., description="Starting chapter number"),
     chapter_end: Optional[int] = Query(None, description="Ending chapter number (inclusive)"),
-    version: Optional[str] = Query(None, description="NKRV, ESV, or both: 'all' / 'NKRV,ESV' (defaults by book language)")
+    version: Optional[Version] = Query(None, description="NKRV, ESV, or all (defaults by book language)")
 ):
     try:
-        # Determine the end chapter range
         end = chapter_end if chapter_end is not None else chapter_start
-
         versions = resolve_versions(book, version)
+        blocks = fetch_verses(book, chapter_start, end, versions)
 
-        # Query Supabase for the requested chapter range
-        result = supabase.table("bible_verses") \
-            .select("id, book, chapter, verse_start, verse_end, text, version") \
-            .in_("book", db_book_names(book, versions)) \
-            .in_("version", versions) \
-            .gte("chapter", chapter_start) \
-            .lte("chapter", end) \
-            .order("chapter") \
-            .order("verse_start") \
-            .order("version") \
-            .execute()
-            
-        if not result.data:
+        if not any(block.verses for block in blocks.values()):
             logger.warning(f"get_bible_chapters no verses found for {book} chapters {chapter_start}-{end}")
             raise HTTPException(status_code=404, detail="Chapters not found")
-            
-        rows = result.data[:500]  # ESV terms: max 500 consecutive verses per response
-        for row in rows:
-            if row.get("version") == "ESV":
-                row["copyright"] = ESV_COPYRIGHT
-        logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {len(rows)} verses")
-        return group_by_version(rows, versions)
+
+        total = sum(len(block.verses) for block in blocks.values())
+        logger.info(f"get_bible_chapters response for '{book} chapters {chapter_start}-{end}': {total} verses")
+        return VersesResponse(book=book, chapter_start=chapter_start, chapter_end=end, versions=blocks)
         
     except HTTPException:
         raise

@@ -13,7 +13,7 @@ class BibleClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    def _get(self, path: str, params: dict) -> list:
+    def _get(self, path: str, params: dict) -> dict:
         try:
             resp = httpx.get(f"{self.base_url}{path}", params=params, timeout=self.timeout)
         except httpx.HTTPError as e:
@@ -42,9 +42,7 @@ class BibleClient:
 
     def verse(self, ref: str, version: str | None = None):
         book, chapter, v_start, v_end = parse_reference(ref)
-        data = self.text(book, v_start, v_end, chapter, version)
-        rows = list(data.values())[0] if isinstance(data, dict) else data
-        return rows
+        return verse_rows(self.text(book, v_start, v_end, chapter, version))
 
     def chapters(self, book: str, chapter_start: int, chapter_end: int, version: str | None = None):
         return self._get("/api/bible/chapters", {
@@ -95,6 +93,14 @@ class BibleClient:
                             continue
         except httpx.HTTPError as e:
             yield {"type": "error", "detail": f"Network error: {e}"}
+
+
+def verse_rows(data: dict) -> list:
+    """Flatten a /text or /chapters envelope into verse rows, keeping every version."""
+    rows = []
+    for block in (data.get("versions") or {}).values():
+        rows.extend(block.get("verses") or [])
+    return rows
 
 
 def parse_reference(ref: str) -> tuple[str, int, int, int]:

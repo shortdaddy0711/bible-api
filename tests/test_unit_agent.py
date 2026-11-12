@@ -1,4 +1,6 @@
 import json
+import threading
+from types import SimpleNamespace
 from unittest.mock import Mock, MagicMock, patch
 
 import pytest
@@ -67,12 +69,10 @@ class TestStripToolMarkup:
 class TestBuildMessages:
     def test_english_sets_esv(self, agent):
         msgs = agent._build_messages("Hello", [])
-        assert agent.current_version == "ESV"
         assert "English Standard Version" in msgs[0]["content"]
 
     def test_korean_sets_nkrv(self, agent):
         msgs = agent._build_messages("하나님", [])
-        assert agent.current_version == "NKRV"
         assert "Revised Korean Version" in msgs[0]["content"]
 
     def test_sanitizes_history(self, agent):
@@ -158,17 +158,90 @@ class TestRunStream:
             agent.run("hi", [])
 
 
+class TestRunStreamConcurrency:
+    def test_concurrent_streams_keep_their_own_version(self, agent):
+        barrier = threading.Barrier(2)
+        seen = {}
+        lock = threading.Lock()
+        local = threading.local()
+
+        class Embeddings:
+            def create(self, input, model):
+                local.query = input
+                barrier.wait(timeout=5)
+                return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2])])
+
+        class RpcCall:
+            def __init__(self, args):
+                self.args = args
+
+            def execute(self):
+                with lock:
+                    seen[local.query] = self.args["version_filter"]
+                return SimpleNamespace(data=[])
+
+        class Supabase:
+            def rpc(self, name, args):
+                return RpcCall(args)
+
+        class Completions:
+            def create(self, model, messages, tools=None, tool_choice=None, stream=None):
+                calls = getattr(local, "calls", 0)
+                local.calls = calls + 1
+                if calls == 0:
+                    tool_call = SimpleNamespace(
+                        id="call_1",
+                        function=SimpleNamespace(
+                            name="search_bible",
+                            arguments=json.dumps({"query": local.query}),
+                        ),
+                    )
+                    message = SimpleNamespace(content=None, tool_calls=[tool_call])
+                else:
+                    message = SimpleNamespace(content="answer", tool_calls=None)
+                return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+        agent.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=Completions()),
+            embeddings=Embeddings(),
+        )
+        agent.supabase = Supabase()
+        assert not hasattr(agent, "current_version")
+
+        errors = []
+
+        def run(message):
+            local.query = message
+            local.calls = 0
+            try:
+                list(agent.run_stream(message, []))
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=run, args=("하나님의 창조",)),
+            threading.Thread(target=run, args=("Explain creation",)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert not errors
+        assert seen == {"하나님의 창조": "NKRV", "Explain creation": "ESV"}
+
+
 class TestSearchTools:
     def test_search_bible_tool_empty_embedding(self, agent):
         agent.client.embeddings.create = Mock(return_value=Mock(data=[]))
-        result = agent.search_bible_tool("query")
+        result = agent.search_bible_tool("query", version="NKRV")
         assert "empty embedding" in result
 
     def test_search_bible_tool_success(self, agent):
         agent.client.embeddings.create = Mock(return_value=Mock(data=[Mock(embedding=[0.1, 0.2])]))
         mock_rpc = Mock(execute=Mock(return_value=Mock(data=[{"content": "verse"}])))
         agent.supabase.rpc = Mock(return_value=mock_rpc)
-        result = agent.search_bible_tool("creation")
+        result = agent.search_bible_tool("creation", version="ESV")
         assert "verse" in result
 
     def test_get_bible_text_tool(self, agent):
@@ -184,5 +257,5 @@ class TestSearchTools:
         chain.order.return_value = chain
         chain.limit.return_value = Mock(execute=Mock(return_value=Mock(data=[{"text": "verse"}])))
         agent.supabase.table = Mock(return_value=chain)
-        result = agent.get_bible_text_tool("Genesis", 1, 1)
+        result = agent.get_bible_text_tool("Genesis", 1, 1, version="ESV")
         assert "verse" in result

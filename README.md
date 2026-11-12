@@ -5,7 +5,7 @@ FastAPI backend for Logos Mind. Bilingual Bible + sermon search over Supabase `p
 ## Features
 
 - **Bilingual Bible Search:** `NKRV` for Korean queries, `ESV` for English — auto-detected via `books.py:detect_version()` (Hangul regex), or explicit `?version=`
-- **Exact Text / Multi-Chapter Retrieval:** `GET /api/bible/text` and `GET /api/bible/chapters` accept Korean or English book names (any case) via `books.py:to_db_book()` / `db_book_names()`. Single version → flat array, `?version=all` / `NKRV,ESV` → `{ "NKRV": [...], "ESV": [...] }` (ESV capped at 500 verses)
+- **Exact Text / Multi-Chapter Retrieval:** `GET /api/bible/text` and `GET /api/bible/chapters` accept Korean or English book names (any case) via `books.py:to_db_book()`. `version` is `NKRV`, `ESV`, or `all` (anything else is `422`). Every response is one envelope: `{"book": ..., "chapter_start": ..., "chapter_end": ..., "versions": {"NKRV": {"verses": [...], "truncated": false, "next_verse_id": null}, ...}}`. Each version is capped at 500 verses and reports `truncated` plus the first omitted row id.
 - **Sermon Quote Retrieval:** `GET /api/sermons/search` over `sermons` chunks
 - **Streaming Agentic Chat:** `POST /api/chat/stream` (SSE) — tool-calling loop (`search_bible`, `get_bible_text`, `find_pastor_quotes`) with citations and `thought`, sanitized `history`, ESV copyright appended for English answers
 - **Bilingual CLI:** `bin/bible` / `cli/` — one-shot `text`/`search`/`sermons`/`chat` + interactive REPL
@@ -69,16 +69,16 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8080 --reload
 - `GET /health` — liveness check
 
 - `GET /api/bible/search`
-  - `query` (string, required), `limit` (int 1–20, default 5), `version` (`NKRV` or `ESV`; auto-detected from `query` language, `all`/`NKRV,ESV` returns `422` — search is per-version)
+  - `query` (string, required), `limit` (int 1–20, default 5), `version` (`NKRV` or `ESV`; auto-detected from `query` language, `all` returns `422` — search is per-version)
   - Calls `match_bible_sections_v` RPC (`match_threshold 0.3`), stamps `version`/`copyright` (ESV)
 
 - `GET /api/bible/text`
-  - `book` (Korean or English, any case), `chapter` (int), `verse_start` (int), `verse_end` (int, optional, inclusive), `version` (`NKRV`, `ESV`, `all`, or `NKRV,ESV`/`ESV,NKRV`; default by `detect_version(book)`)
-  - Returns `VerseResponse[]` for one version, or `{ "NKRV": [...], "ESV": [...] }` for `all`; capped at 500 rows per response
+  - `book` (Korean or English, any case), `chapter` (int), `verse_start` (int), `verse_end` (int, optional, inclusive), `version` (`NKRV`, `ESV`, or `all`; default by `detect_version(book)`)
+  - Returns one `VersesResponse` envelope with a `versions` object; each version caps at 500 rows and carries `truncated` plus `next_verse_id`
 
 - `GET /api/bible/chapters`
   - `book`, `chapter_start` (int), `chapter_end` (int, optional), `version` (same as `/text`)
-  - Same grouping/cap as `/text`, ordered by `chapter`, `verse_start`, `version`
+  - Same envelope and per-version cap as `/text`, ordered by `chapter`, `verse_start`
 
 - `GET /api/sermons/search`
   - `query` (string), `limit` (int 1–10, default 3)
@@ -112,7 +112,7 @@ bin/bible text --help
 # exact verse lookup (book names via books.py, any case)
 ./bin/bible text "Psalm 23:1-3"
 ./bin/bible text "Genesis 1:1" --version ESV
-./bin/bible text "Genesis 1:1" --version all   # {"NKRV": [...], "ESV": [...]}
+./bin/bible text "Genesis 1:1" --version all   # both versions rendered from one envelope
 
 # semantic search (bible_sections)
 ./bin/bible search "creation" --limit 5
@@ -159,7 +159,7 @@ Isolated unit tests (mocked `supabase`/`openai` — no server needed):
 
 ```bash
 uv sync --extra dev        # installs pytest + pytest-asyncio
-uv run pytest -v           # 68 tests: books, parser, agent, main helpers
+uv run pytest -v           # 75 tests: books, parser, agent, routes, main helpers
 uv run pytest tests/test_unit_books.py -v
 uv run pytest tests/test_unit_agent.py::TestBuildMessages -v
 ```
@@ -168,8 +168,9 @@ Coverage:
 
 - `tests/test_unit_books.py` — `detect_version`, `normalize_book`, `canonical_book`, `to_db_book`, `db_book_names`, `ko_to_en`
 - `tests/test_unit_parser.py` — `cli/parser.parse_reference` & `cli/client.parse_reference`
-- `tests/test_unit_agent.py` — `extract_citations`, `strip_tool_markup`, `_build_messages`, `run_stream`/`run`, `search_bible_tool`
-- `tests/test_unit_main.py` — `resolve_versions`, `group_by_version`
+- `tests/test_unit_agent.py` — `extract_citations`, `strip_tool_markup`, `_build_messages`, `run_stream`/`run`, `search_bible_tool`, concurrent-stream version isolation
+- `tests/test_unit_main.py` — `resolve_versions`
+- `tests/test_unit_routes.py` — envelope shape, version enum, lowercase-version rows, per-version truncation, 404
 
 ## ESV Data Ingestion
 
@@ -196,7 +197,8 @@ agent.py            # BibleAgent (tool loop, citations, streaming)
 main.py             # FastAPI app + /api/* routes
 cli/                # bilingual CLI (client.py, parser.py, render.py, main.py)
 bin/bible           # wrapper → uv run -m cli.main
-tests/              # ad-hoc API scripts (chat, search, ESV)
+tests/              # unit + route tests (no live API needed)
+docs/               # refactor audit and status
 scripts/            # ingest_esv, extract_pericopes, apply_chunking, schema_update
 pericope_map.json   # chunk boundaries for bible_sections
 ```

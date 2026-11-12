@@ -102,7 +102,6 @@ class BibleAgent:
         self.client = openai_client
         self.supabase = supabase_client
         self.model = os.environ.get("AGENT_MODEL", "moonshotai/kimi-k2.6")
-        self.current_version = "NKRV"
     
     def extract_citations(self, text: str) -> List[Dict[str, Any]]:
         # Regex to match [Book Chapter:Verse-Verse] or [Book Chapter:Verse]
@@ -120,7 +119,7 @@ class BibleAgent:
             })
         return citations
 
-    def search_bible_tool(self, query: str, limit: int = 5) -> str:
+    def search_bible_tool(self, query: str, limit: int = 5, *, version: str) -> str:
         """Search the Bible for relevant sections based on a semantic query."""
         try:
             # 1. Embed the query (Using OpenAI embedding model via OpenRouter or direct if needed)
@@ -141,7 +140,7 @@ class BibleAgent:
                     "query_embedding": query_embedding,
                     "match_threshold": 0.3,
                     "match_count": limit,
-                    "version_filter": self.current_version
+                    "version_filter": version
                 }
             ).execute()
 
@@ -150,17 +149,17 @@ class BibleAgent:
             logger.error(f"Agent search_bible_tool error: {e}\n{traceback.format_exc()}")
             return f"Error searching Bible: {str(e)}"
 
-    def get_bible_text_tool(self, book: str, chapter: int, verse_start: int, verse_end: Optional[int] = None) -> str:
+    def get_bible_text_tool(self, book: str, chapter: int, verse_start: int, verse_end: Optional[int] = None, *, version: str) -> str:
         """Get the specific text of Bible verses."""
         try:
             end = verse_end if verse_end is not None else verse_start
             # ESV rows are stored under English book names, NKRV under Korean
-            db_book = to_db_book(book, self.current_version)
+            db_book = to_db_book(book, version)
             result = self.supabase.table("bible_verses") \
                 .select("book, chapter, verse_start, verse_end, text") \
                 .eq("book", db_book) \
                 .eq("chapter", chapter) \
-                .eq("version", self.current_version) \
+                .eq("version", version) \
                 .gte("verse_start", verse_start) \
                 .lte("verse_end", end) \
                 .order("verse_start") \
@@ -198,11 +197,11 @@ class BibleAgent:
             logger.error(f"Agent find_pastor_quotes_tool error: {e}\n{traceback.format_exc()}")
             return f"Error searching sermons: {str(e)}"
 
-    def call_tool(self, function_name: str, function_args: Dict[str, Any]) -> str:
+    def call_tool(self, function_name: str, function_args: Dict[str, Any], version: str) -> str:
         if function_name == "search_bible":
-            return self.search_bible_tool(**function_args)
+            return self.search_bible_tool(version=version, **function_args)
         if function_name == "get_bible_text":
-            return self.get_bible_text_tool(**function_args)
+            return self.get_bible_text_tool(version=version, **function_args)
         if function_name == "find_pastor_quotes":
             return self.find_pastor_quotes_tool(**function_args)
         return "Unknown tool"
@@ -219,9 +218,10 @@ class BibleAgent:
             flags=re.DOTALL,
         ).strip()
 
-    def _build_messages(self, user_message: str, history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
-        self.current_version = detect_version(user_message)
-        system_prompt = SYSTEM_PROMPT_KR if self.current_version == "NKRV" else SYSTEM_PROMPT_EN
+    def _build_messages(self, user_message: str, history: Optional[List[Dict[str, str]]] = None,
+                        version: Optional[str] = None) -> List[Dict[str, Any]]:
+        version = version or detect_version(user_message)
+        system_prompt = SYSTEM_PROMPT_KR if version == "NKRV" else SYSTEM_PROMPT_EN
         # Sanitize history: drop non-dict entries or entries with None content to avoid LLM returning None choices
         sanitized_history = []
         for h in (history or [])[-10:]:
@@ -246,7 +246,8 @@ class BibleAgent:
             {"role": "user", "content": user_message}
         ]
 
-    def _run_tool_loop(self, messages: List[Dict[str, Any]], thought_process: List[str], stream_final: bool = False):
+    def _run_tool_loop(self, messages: List[Dict[str, Any]], thought_process: List[str], version: str,
+                       stream_final: bool = False):
         """Drive the tool-call loop. Returns (response_message, tool_rounds, stream).
         response_message is None if the loop exhausted all rounds on tool calls
         (caller must then force a final answer without tools)."""
@@ -292,7 +293,7 @@ class BibleAgent:
                         f"Searching for: {function_args.get('book', '?')} {function_args.get('chapter', '?')}"
                     )
 
-                result = self.call_tool(function_name, function_args)
+                result = self.call_tool(function_name, function_args, version)
                 messages.append({
                     "tool_call_id": tool_call.id,
                     "role": "tool",
@@ -331,9 +332,10 @@ class BibleAgent:
     def run_stream(self, user_message: str, history: Optional[List[Dict[str, str]]] = None):
         """Generator yielding events: {"type": "delta", "content": str} and
         {"type": "done", "answer": str, "thought": str, "citations": [...]}."""
-        messages = self._build_messages(user_message, history)
+        version = detect_version(user_message)
+        messages = self._build_messages(user_message, history, version)
         thought_process = []
-        response_message, _, stream = self._run_tool_loop(messages, thought_process, stream_final=True)
+        response_message, _, stream = self._run_tool_loop(messages, thought_process, version, stream_final=True)
 
         answer = None
         if stream is not None:
